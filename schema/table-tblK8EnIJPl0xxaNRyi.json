@@ -1,0 +1,185 @@
+{
+  "id": "tblK8EnIJPl0xxaNRyi",
+  "name": "مراجعة مِشكاة",
+  "description": null,
+  "dbTableName": "\"bseYzsmAxanGNy08jE6\".\"tblK8EnIJPl0xxaNRyi\"",
+  "fields": [
+    {
+      "id": "fldGU5OOvIQPbhcIX4r",
+      "name": "الموضع",
+      "dbFieldName": "lmwDaa",
+      "type": "singleLineText",
+      "description": null,
+      "options": {},
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldrJo5juB8hBPSDwsw",
+      "name": "السورة",
+      "dbFieldName": "lswr",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldRbz9M3NDhv0DeLg1",
+      "name": "الآية",
+      "dbFieldName": "lay",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldMffncX7ChiqakTnP",
+      "name": "الصفحة",
+      "dbFieldName": "lSfH",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldHgvvM18choXXpTzD",
+      "name": "عدد الأخطاء",
+      "dbFieldName": "aadd_l_khT",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldMfgwmhOais6LehVS",
+      "name": "مستوى المراجعة",
+      "dbFieldName": "mstw_lmrjaa",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldFbiynryNdJPIsnTx",
+      "name": "المراجعة القادمة",
+      "dbFieldName": "lmrjaa_lqdm",
+      "type": "date",
+      "description": null,
+      "options": {
+        "formatting": {
+          "date": "YYYY-MM-DD",
+          "time": "None",
+          "timeZone": "utc"
+        }
+      },
+      "cellValueType": "dateTime",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldf6PoqYVFjCoHMGmB",
+      "name": "آخر مراجعة",
+      "dbFieldName": "akhr_mrjaa",
+      "type": "date",
+      "description": null,
+      "options": {
+        "formatting": {
+          "date": "YYYY-MM-DD",
+          "time": "None",
+          "timeZone": "utc"
+        }
+      },
+      "cellValueType": "dateTime",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fld8EXxqEi5Z3HoiG0z",
+      "name": "التفاصيل",
+      "dbFieldName": "ltfSyl",
+      "type": "longText",
+      "description": null,
+      "options": {},
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldC3POrPbCp4RqK9Wf",
+      "name": "أنواع الأخطاء",
+      "dbFieldName": "nwaa_l_khT",
+      "type": "multipleSelect",
+      "description": null,
+      "options": [
+        "تجويد",
+        "تشكيل",
+        "نطق وحروف"
+      ],
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": true
+    },
+    {
+      "id": "fldZNT1UjVU3HsvngJi",
+      "name": "الحالة",
+      "dbFieldName": "lHl",
+      "type": "singleSelect",
+      "description": null,
+      "options": [
+        "مستحق",
+        "قريب",
+        "متقن"
+      ],
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    }
+  ]
+}

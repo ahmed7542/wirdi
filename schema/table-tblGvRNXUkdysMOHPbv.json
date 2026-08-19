@@ -1,0 +1,237 @@
+{
+  "id": "tblGvRNXUkdysMOHPbv",
+  "name": "جلسات مِشكاة",
+  "description": null,
+  "dbTableName": "\"bseYzsmAxanGNy08jE6\".\"tblGvRNXUkdysMOHPbv\"",
+  "fields": [
+    {
+      "id": "fldxwUl4QAErLaFpXjd",
+      "name": "من آية",
+      "dbFieldName": "mn_ay",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldq7g1PBeT6QUqHaX7",
+      "name": "إلى آية",
+      "dbFieldName": "l_ay",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fld620pGqvvNzixYkid",
+      "name": "الصفحة",
+      "dbFieldName": "lSfH",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldPrC8RPs9Guz9BJN2",
+      "name": "عدد المقاطع",
+      "dbFieldName": "aadd_lmqTaa",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldcumPdbZ0i6Ewv7ep",
+      "name": "عدد الأخطاء",
+      "dbFieldName": "aadd_l_khT",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldyXHRv3PWMt16p1Sb",
+      "name": "آيات ناجحة",
+      "dbFieldName": "ayt_njH",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldt8aDltxR25WnggV4",
+      "name": "الملخص",
+      "dbFieldName": "lmlkhS",
+      "type": "longText",
+      "description": null,
+      "options": {},
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "flda7pNTROdPw8PhEZt",
+      "name": "الحالة",
+      "dbFieldName": "lHl",
+      "type": "singleSelect",
+      "description": null,
+      "options": [
+        "جارية",
+        "مكتملة",
+        "متوقفة"
+      ],
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldEqf4Ebfqrg7QAPqP",
+      "name": "الجلسة",
+      "dbFieldName": "ljls",
+      "type": "singleLineText",
+      "description": null,
+      "options": {},
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fld3tOdkwVEfhVf9spK",
+      "name": "بدأت في",
+      "dbFieldName": "bd_t_fy",
+      "type": "date",
+      "description": null,
+      "options": {
+        "formatting": {
+          "date": "YYYY-MM-DD",
+          "time": "None",
+          "timeZone": "utc"
+        }
+      },
+      "cellValueType": "dateTime",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldzoWysAcxoZBtffNK",
+      "name": "انتهت في",
+      "dbFieldName": "ntht_fy",
+      "type": "date",
+      "description": null,
+      "options": {
+        "formatting": {
+          "date": "YYYY-MM-DD",
+          "time": "None",
+          "timeZone": "utc"
+        }
+      },
+      "cellValueType": "dateTime",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "flddwUXK2GZCNRVitBX",
+      "name": "المدة بالثواني",
+      "dbFieldName": "lmd_blthwny",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldhVxOrWaTd44EouVa",
+      "name": "السورة",
+      "dbFieldName": "lswr",
+      "type": "number",
+      "description": null,
+      "options": {
+        "formatting": {
+          "type": "decimal",
+          "precision": 2
+        }
+      },
+      "cellValueType": "number",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    },
+    {
+      "id": "fldoOyaWnKtM2zSpgN3",
+      "name": "النوع",
+      "dbFieldName": "lnwaa",
+      "type": "singleSelect",
+      "description": null,
+      "options": [
+        "تسميع",
+        "بحث صوتي",
+        "تسميع مستمر",
+        "تسميع حفظ"
+      ],
+      "cellValueType": "string",
+      "isLookup": null,
+      "isComputed": null,
+      "isMultipleCellValue": false
+    }
+  ]
+}
