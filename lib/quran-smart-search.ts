@@ -30,6 +30,8 @@ export type QuranSearchNavigationData = {
   pages: QuranSearchPage[]
 }
 
+export type QuranSearchLanguage = "ar" | "en"
+
 export type QuranSmartSearchResult = {
   id: string
   kind: "surah" | "juz" | "hizb" | "page" | "verse"
@@ -141,14 +143,18 @@ function pageResult(page: QuranSearchPage, english = false): QuranSmartSearchRes
   }
 }
 
-export function searchQuranNavigationLocally(data: QuranSearchNavigationData, query: string): QuranSmartSearchResult[] {
+export function searchQuranNavigationLocally(
+  data: QuranSearchNavigationData,
+  query: string,
+  interfaceLanguage?: QuranSearchLanguage,
+): QuranSmartSearchResult[] {
   const normalized = normalizeQuranSmartQuery(query)
-  const english = isEnglishQuery(normalized)
+  const english = interfaceLanguage ? interfaceLanguage === "en" : isEnglishQuery(normalized)
   if (!normalized) return []
 
   const directVerse = normalized.match(/^(\d{1,3})\s*[:：]\s*(\d{1,3})$/)
   if (directVerse) {
-    const result = verseResult(data, `${Number(directVerse[1])}:${Number(directVerse[2])}`)
+    const result = verseResult(data, `${Number(directVerse[1])}:${Number(directVerse[2])}`, english)
     return result ? [result] : []
   }
 

@@ -55,6 +55,10 @@ test("يدعم البحث الإنجليزي البنيوي وأسماء الس�
     await search.fill(query)
     await expect(page.locator(`button[data-search-id="${resultId}"]:visible`)).toContainText(expectedLabel)
   }
+
+  const directAyahResult = page.locator('button[data-search-id="verse-2:255"]:visible')
+  await expect(directAyahResult).toContainText("Page 42")
+  await expect(directAyahResult).not.toContainText("صفحة")
 })
 
 test("يبقي البحث العربي فعالًا بعد إضافة اللغة الإنجليزية", async ({ page }) => {
@@ -68,6 +72,10 @@ test("يبقي البحث العربي فعالًا بعد إضافة اللغة
   await expect(page.locator('button[data-search-id="juz-5"]:visible')).toContainText("الجزء 5")
   await search.fill("آية الكرسي")
   await expect(page.locator('button[data-verse-key="2:255"]:visible')).toBeVisible()
+  await search.fill("2:255")
+  const directAyahResult = page.locator('button[data-search-id="verse-2:255"]:visible')
+  await expect(directAyahResult).toContainText("صفحة 42")
+  await expect(directAyahResult).not.toContainText("Page 42")
 })
 
 test("يشغّل الواجهة الإنجليزية والبحث المحلي دون اتصال", async ({ page, context }) => {

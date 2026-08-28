@@ -4,6 +4,7 @@ import dynamic from "next/dynamic"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { BookOpen, ChevronUp, Headphones, History, LoaderCircle, Mic, RefreshCw, Search, Shuffle } from "lucide-react"
 
+import { useInterfaceLanguage } from "@/components/interface-language-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -177,6 +178,7 @@ export function QuranNavigation({
   compactMobileHeader = false,
   dashboard = false,
 }: QuranNavigationProps) {
+  const { language } = useInterfaceLanguage()
   const { data, loading, error: indexError, retry } = useNavigationData()
   const panelRef = useRef<HTMLElement>(null)
   const searchRequestRef = useRef(0)
@@ -194,7 +196,7 @@ export function QuranNavigation({
 
   const normalizedQuery = normalizeArabic(query)
   const localSearchResults = useMemo<SearchResult[]>(() => data
-    ? searchQuranNavigationLocally(data, query).map((result) => ({
+    ? searchQuranNavigationLocally(data, query, language).map((result) => ({
         id: result.id,
         kind: result.kind,
         verseKey: result.startVerseKey,
@@ -203,7 +205,7 @@ export function QuranNavigation({
         title: result.title,
         detail: result.detail,
       }))
-    : [], [data, query])
+    : [], [data, language, query])
   const currentChapter = data?.chapters.find((chapter) => chapter.id === currentChapterId)
     ?? data?.chapters.find((chapter) => currentPage >= chapter.startPage && currentPage <= chapter.endPage)
   const currentJuz = data?.juzs.find((juz) => juz.number === currentJuzNumber)

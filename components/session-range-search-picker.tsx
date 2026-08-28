@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, ChevronsUpDown, LoaderCircle, Search } from "lucide-react"
 
+import { useInterfaceLanguage, type InterfaceLanguage } from "@/components/interface-language-provider"
 import { Button } from "@/components/ui/button"
 import {
   Drawer,
@@ -189,10 +190,14 @@ function rangeResultForVerse(data: NavigationData, verseKey: string, text?: stri
   }
 }
 
-function localRangeSearch(data: NavigationData, query: string) {
-  return searchQuranNavigationLocally(data, query).flatMap((result) => {
-    const startLabel = result.kind === "verse" ? undefined : `بداية ${result.title}`
-    const endLabel = result.kind === "verse" ? undefined : `نهاية ${result.title}`
+function localRangeSearch(data: NavigationData, query: string, language: InterfaceLanguage) {
+  return searchQuranNavigationLocally(data, query, language).flatMap((result) => {
+    const startLabel = result.kind === "verse"
+      ? language === "en" ? result.title : undefined
+      : `${language === "en" ? "Start of" : "بداية"} ${result.title}`
+    const endLabel = result.kind === "verse"
+      ? language === "en" ? result.title : undefined
+      : `${language === "en" ? "End of" : "نهاية"} ${result.title}`
     const start = resolveVerse(data, result.startVerseKey, startLabel)
     const end = resolveVerse(data, result.endVerseKey, endLabel)
     if (!start || !end) return []
@@ -255,6 +260,7 @@ function RangeSearchField({
   navigation?: boolean
   onSelect: (result: RangeSearchResult) => void
 }) {
+  const { language } = useInterfaceLanguage()
   const requestRef = useRef(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const optionsRef = useRef<HTMLDivElement>(null)
@@ -266,7 +272,7 @@ function RangeSearchField({
   const [divisionKind, setDivisionKind] = useState<"juz" | "hizb">("juz")
   const [pageCursor, setPageCursor] = useState(selected.page)
   const [isMobile, setIsMobile] = useState(false)
-  const localResults = useMemo(() => localRangeSearch(data, query), [data, query])
+  const localResults = useMemo(() => localRangeSearch(data, query, language), [data, language, query])
   const results = useMemo(
     () => mergeAndFilterResults(localResults, remoteResults, edge, minimumOrdinal),
     [edge, localResults, minimumOrdinal, remoteResults],

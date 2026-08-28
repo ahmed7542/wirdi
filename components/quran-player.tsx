@@ -62,6 +62,7 @@ import type {
   DownloadReciter,
   SearchGestureDirection,
 } from "@/components/app-settings"
+import { useInterfaceLanguage, type InterfaceLanguage } from "@/components/interface-language-provider"
 import type { LearningPlanRange } from "@/components/learning-plan"
 import type { MutashabihatContextVerse } from "@/components/mutashabihat-following-context"
 import type {
@@ -416,9 +417,13 @@ function normalizeSearchCharacter(value: string) {
     .replace(/ـ/g, "")
 }
 
-function localQuickNavigationSearch(data: QuickNavigationData | null, query: string): QuickNavigatorResult[] {
+function localQuickNavigationSearch(
+  data: QuickNavigationData | null,
+  query: string,
+  language: InterfaceLanguage,
+): QuickNavigatorResult[] {
   if (!data) return []
-  return searchQuranNavigationLocally(data, query).map((result) => {
+  return searchQuranNavigationLocally(data, query, language).map((result) => {
     const [chapterId, ayah] = result.startVerseKey.split(":").map(Number)
     const chapter = data.chapters.find((item) => item.id === chapterId)
     return {
@@ -979,6 +984,7 @@ function formatSessionDuration(seconds: number) {
 }
 
 export function QuranPlayer() {
+  const { language } = useInterfaceLanguage()
   const audioRef = useRef<HTMLAudioElement>(null)
   const advancingRef = useRef(false)
   const isPlayingRef = useRef(false)
@@ -3239,7 +3245,7 @@ export function QuranPlayer() {
       return
     }
 
-    const localResults = localQuickNavigationSearch(quickNavigationData, query)
+    const localResults = localQuickNavigationSearch(quickNavigationData, query, language)
     if (isStructuralQuranSearch(query)) {
       if (localResults[0]) preloadNavigationPage(localResults[0].page)
       setQuickNavigatorResults(localResults)
@@ -3290,13 +3296,13 @@ export function QuranPlayer() {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [preloadNavigationPage, quickNavigationData, quickNavigatorQuery])
+  }, [language, preloadNavigationPage, quickNavigationData, quickNavigatorQuery])
 
   useEffect(() => {
     if (!quickNavigatorOpen && !dashboardOpen) return
     const query = quickNavigatorQuery.trim()
     if (isQuranSearchQueryReady(query)) {
-      const localTarget = localQuickNavigationSearch(quickNavigationData, query)[0]
+      const localTarget = localQuickNavigationSearch(quickNavigationData, query, language)[0]
       const targetPage = localTarget?.page ?? quickNavigatorResults[0]?.page
       if (targetPage && targetPage !== currentPage) preloadNavigationPage(targetPage)
       return
@@ -3309,6 +3315,7 @@ export function QuranPlayer() {
   }, [
     currentPage,
     dashboardOpen,
+    language,
     preloadNavigationPage,
     quickNavigationData,
     quickNavigatorOpen,
