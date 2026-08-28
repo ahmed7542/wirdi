@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration"
 import { AppInstallRegistration } from "@/components/app-install-registration"
 import { OfflineQuranSync } from "@/components/offline-quran-sync"
+import { InterfaceLanguageProvider } from "@/components/interface-language-provider"
 
 const ibmPlexArabic = localFont({
   src: [
@@ -27,6 +28,8 @@ const amiriQuran = localFont({
   variable: "--font-amiri-quran",
   display: "swap",
 })
+
+const languageInitializationScript = `(function(){try{var l=localStorage.getItem("wird-interface-language-v1")==="en"?"en":"ar",r=document.documentElement;r.lang=l;r.dir=l==="en"?"ltr":"rtl";r.dataset.interfaceLanguage=l}catch(e){}})();`
 
 const paletteInitializationScript = `(function(){try{
 var k="wird-color-palette-v1",p=localStorage.getItem(k),a=["olive","turquoise","gold","blue","beige","charcoal","custom"];
@@ -46,14 +49,14 @@ document.querySelectorAll('meta[name="theme-color"]').forEach(function(e){e.cont
 export const metadata: Metadata = {
   title: "وِردي | رفيق الحفظ والمراجعة",
   description: "تطبيق لمراجعة القرآن الكريم وحفظه.",
-  applicationName: "وِرد",
+  applicationName: "وِردي",
   icons: {
     icon: "/icons/wird-192.png",
     apple: "/icons/wird-192.png",
   },
   appleWebApp: {
     capable: true,
-    title: "وِرد",
+    title: "وِردي",
     statusBarStyle: "default",
   },
 };
@@ -78,6 +81,11 @@ export default function RootLayout({
       className={`${ibmPlexArabic.variable} ${amiriQuran.variable}`}
     >
       <head>
+        <script
+          id="wird-language"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: languageInitializationScript }}
+        />
         <script
           id="wird-palette"
           suppressHydrationWarning
@@ -120,25 +128,27 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
-        <ThemeProvider>
-          <ReactErrorBoundary>
-            {children}
-          </ReactErrorBoundary>
-          <Toaster
-            position="bottom-left"
-            visibleToasts={2}
-            gap={4}
-            duration={2400}
-            offset={{ bottom: "calc(var(--wird-player-height, 72px) + 8px)", left: 10 }}
-            mobileOffset={{ bottom: "calc(var(--wird-player-height, 72px) + 8px)", left: 8 }}
-          />
-          <ErrorReporter />
-          <ConsoleReporter />
-          <AppAnalytics />
-          <AppInstallRegistration />
-          <ServiceWorkerRegistration />
-          <OfflineQuranSync />
-        </ThemeProvider>
+        <InterfaceLanguageProvider>
+          <ThemeProvider>
+            <ReactErrorBoundary>
+              {children}
+            </ReactErrorBoundary>
+            <Toaster
+              position="bottom-left"
+              visibleToasts={2}
+              gap={4}
+              duration={2400}
+              offset={{ bottom: "calc(var(--wird-player-height, 72px) + 8px)", left: 10 }}
+              mobileOffset={{ bottom: "calc(var(--wird-player-height, 72px) + 8px)", left: 8 }}
+            />
+            <ErrorReporter />
+            <ConsoleReporter />
+            <AppAnalytics />
+            <AppInstallRegistration />
+            <ServiceWorkerRegistration />
+            <OfflineQuranSync />
+          </ThemeProvider>
+        </InterfaceLanguageProvider>
         <Script
           id="microsoft-clarity"
           strategy="afterInteractive"

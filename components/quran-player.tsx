@@ -2014,7 +2014,7 @@ export function QuranPlayer() {
   }
 
   const renderMutashabihatText = (segments: MutashabihatSegment[]) => (
-    <span className="font-quran text-base leading-8">
+    <span className="font-quran text-base leading-8" data-quran-content>
       {segments.map((segment, index) => (
         <span
           key={`${index}-${segment.text.slice(0, 8)}`}
@@ -7513,7 +7513,10 @@ export function QuranPlayer() {
               <span className="mb-1 block text-xs font-semibold text-primary sm:text-sm">
                 {result.title ?? `سورة ${result.surahName} · الآية ${result.ayah}`} · صفحة {result.page}
               </span>
-              <span className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", result.kind === "verse" || !result.kind ? "font-quran" : "text-sm")}>
+              <span
+                className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", result.kind === "verse" || !result.kind ? "font-quran" : "text-sm")}
+                data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
+              >
                 {searchTextSegments(result.text, quickNavigatorQuery).map((segment, index) => (
                   <span
                     key={`${result.verseKey}-${index}`}
@@ -8061,7 +8064,7 @@ export function QuranPlayer() {
           <DialogContent className="max-w-sm" dir="rtl">
             <DialogHeader className="text-right">
               <DialogTitle>الآية {verseAction?.verseKey}</DialogTitle>
-              <DialogDescription className="line-clamp-2 font-quran text-base leading-8 text-foreground">
+              <DialogDescription className="line-clamp-2 font-quran text-base leading-8 text-foreground" data-quran-content>
                 {verseAction?.text}
               </DialogDescription>
             </DialogHeader>
@@ -8169,7 +8172,7 @@ export function QuranPlayer() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
               {tafsirTarget?.text && (
                 <div className="mb-4 border-y bg-secondary/20 py-3">
-                  <p className="font-quran text-lg leading-9 text-foreground">{tafsirTarget.text}</p>
+                  <p className="font-quran text-lg leading-9 text-foreground" data-quran-content>{tafsirTarget.text}</p>
                 </div>
               )}
 
@@ -8765,7 +8768,7 @@ export function QuranPlayer() {
                       : `الكلمات ${highlightDraftStart}–${highlightDraftEnd} · ${highlightDraftEnd - highlightDraftStart + 1} ${highlightDraftEnd === highlightDraftStart ? "كلمة" : "كلمات"}`}
                   </strong>
                   {highlightDraftText && (
-                    <small className="font-quran mt-0.5 block max-w-xl truncate text-sm font-normal text-foreground/80">
+                    <small className="font-quran mt-0.5 block max-w-xl truncate text-sm font-normal text-foreground/80" data-quran-content>
                       {highlightDraftText}
                     </small>
                   )}
@@ -9271,7 +9274,7 @@ export function QuranPlayer() {
                     : error
                       ? error
                       : currentVerse
-                        ? currentVerse.text
+                        ? <span data-quran-content>{currentVerse.text}</span>
                         : "التلاوة جاهزة"}
                 </p>
               </div>

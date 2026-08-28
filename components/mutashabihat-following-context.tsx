@@ -90,12 +90,12 @@ export function MutashabihatFollowingContext({
 
   return (
     <div className={className} data-mutashabihat-following-context={verseKey}>
-      {children}
+      <span data-quran-content>{children}</span>
       <AyahNumber number={currentAyah} />
       {visibleCount === 0 && hasMore && revealButton(currentAyah)}
       {loadedVerses.slice(0, visibleCount).map((verse, index) => (
         <span key={verse.verseKey}>
-          {" "}{verse.text}<AyahNumber number={verse.ayah} />
+          <span data-quran-content>{" "}{verse.text}</span><AyahNumber number={verse.ayah} />
           {index === visibleCount - 1 && hasMore && revealButton(verse.ayah)}
         </span>
       ))}

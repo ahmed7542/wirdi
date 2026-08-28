@@ -94,7 +94,7 @@ type MutashabihatBrowserProps = {
 
 function renderSegments(segments: TextSegment[]) {
   return (
-    <span className="font-quran text-lg leading-9 sm:text-xl sm:leading-10">
+    <span className="font-quran text-lg leading-9 sm:text-xl sm:leading-10" data-quran-content>
       {segments.map((segment, index) => (
         <span
           key={`${index}-${segment.text.slice(0, 12)}`}
@@ -178,7 +178,7 @@ function ResultRows({
             <span className="text-primary">سورة {verse.surahName} · الآية {verse.ayah}</span>
             <span className="text-muted-foreground">صفحة {verse.page}</span>
           </span>
-          <span className="font-quran block text-lg leading-9 text-foreground sm:text-xl sm:leading-10">
+          <span className="font-quran block text-lg leading-9 text-foreground sm:text-xl sm:leading-10" data-quran-content>
             {verse.text}
           </span>
         </button>

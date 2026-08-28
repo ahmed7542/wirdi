@@ -404,7 +404,7 @@ function RangeSearchField({
           <span className="shrink-0 text-[10px] text-muted-foreground">ص {target.page}</span>
         </span>
         <span className="mt-0.5 block text-[11px] text-muted-foreground">{result.detail}</span>
-        {result.text && <span className="font-quran mt-1 block line-clamp-2 text-base leading-7 text-foreground">{result.text}</span>}
+        {result.text && <span className="font-quran mt-1 block line-clamp-2 text-base leading-7 text-foreground" data-quran-content>{result.text}</span>}
       </button>
     )
   }) : (

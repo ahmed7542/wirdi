@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { KHATMA_STORAGE_KEY, type KhatmaPlan } from "@/components/khatma-planner"
+import { useInterfaceLanguage } from "@/components/interface-language-provider"
 import type { LearningPlanRange } from "@/components/learning-plan"
 import {
   MutashabihatBrowser,
@@ -125,11 +126,11 @@ function readKhatmaPlan() {
   }
 }
 
-function formatBackupDate(value: string | null) {
+function formatBackupDate(value: string | null, language: "ar" | "en") {
   if (!value) return "لم تُنشأ"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "لم تُنشأ"
-  return new Intl.DateTimeFormat("ar-AE", {
+  return new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ar-AE", {
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -155,6 +156,7 @@ export function WirdDashboard({
   onReviewDetailsLoaded,
   onReviewOutcome,
 }: WirdDashboardProps) {
+  const { language } = useInterfaceLanguage()
   const [stats, setStats] = useState<ReadingStats>(EMPTY_STATS)
   const [khatma, setKhatma] = useState<KhatmaPlan | null>(null)
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>([])
@@ -381,14 +383,14 @@ export function WirdDashboard({
                         <strong>سورة {highlight.chapterName ?? "..."}</strong>
                         <span className="text-muted-foreground">الآية {verseNumber}</span>
                       </span>
-                      <span className="font-quran mt-2 block whitespace-normal text-lg leading-9 text-foreground group-hover:text-primary">
+                      <span className="font-quran mt-2 block whitespace-normal text-lg leading-9 text-foreground group-hover:text-primary" data-quran-content>
                         {highlight.verseText ?? "جارٍ تحميل نص الآية..."}
                       </span>
                       <span className="mt-3 block border-s-2 border-[var(--quran-highlight)] ps-3">
                         <small className="block text-xs text-muted-foreground">
                           الكلمات التي تحتاج تثبيت · {HIGHLIGHT_CATEGORY_LABELS[highlight.category ?? "reinforce"]}
                         </small>
-                        <strong className="font-quran mt-1 block whitespace-normal text-base leading-8 text-[var(--quran-highlight)]">
+                        <strong className="font-quran mt-1 block whitespace-normal text-base leading-8 text-[var(--quran-highlight)]" data-quran-content>
                           {highlightedWords || "جارٍ تحميل الكلمات المحددة..."}
                         </strong>
                       </span>
@@ -515,7 +517,7 @@ export function WirdDashboard({
         >
           <FileDown className="mt-0.5 size-4 shrink-0 text-primary" />
           <span className="min-w-0 flex-1">
-            <span className="block">آخر نسخة احتياطية: <strong className="font-medium text-foreground">{formatBackupDate(lastBackupAt)}</strong></span>
+            <span className="block">آخر نسخة احتياطية: <strong className="font-medium text-foreground">{formatBackupDate(lastBackupAt, language)}</strong></span>
             {!lastBackupAt && (Boolean(khatma) || learningPlans.length > 0 || bookmarks.length >= 3) && (
               <span className="mt-1 block text-xs">بياناتك محفوظة على هذا الجهاز. يمكنك تصدير نسخة من تبويب التطبيق في الإعدادات.</span>
             )}

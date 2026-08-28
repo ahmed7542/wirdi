@@ -571,3 +571,25 @@ html[data-large-controls="true"] [data-slot="button"] svg {
 [data-sonner-toast][data-type="error"].wird-toast-shell [data-icon] {
   color: var(--destructive) !important;
 }
+
+html[data-interface-language="en"] body {
+  direction: ltr;
+}
+
+html[data-interface-language="en"] .text-right {
+  text-align: left;
+}
+
+html[data-interface-language="en"] [data-quran-text-page] .text-right {
+  text-align: right;
+}
+
+[data-quran-text-page],
+[data-quran-text-page] [dir],
+[data-quran-content],
+[data-quran-content] [dir],
+[translate="no"],
+[translate="no"] [dir] {
+  direction: rtl !important;
+  unicode-bidi: isolate;
+}

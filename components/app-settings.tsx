@@ -15,6 +15,7 @@ import {
   HardDrive,
   Headphones,
   ImageIcon,
+  Languages,
   LoaderCircle,
   Monitor,
   Moon,
@@ -72,6 +73,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { ViewMode } from "@/components/quran-player"
 import type { LineSpacing, ReadingMode } from "@/components/quran-page"
 import { APP_PALETTES, useAppPalette, type AppPalette } from "@/components/theme-provider"
+import { useInterfaceLanguage } from "@/components/interface-language-provider"
 import {
   APP_INSTALL_PROMPT_CHANGE_EVENT,
   clearDeferredInstallPrompt,
@@ -236,11 +238,11 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** 2).toFixed(value >= 100 * 1024 ** 2 ? 0 : 1)} MB`
 }
 
-function formatBackupDate(value: string | null) {
+function formatBackupDate(value: string | null, language: "ar" | "en") {
   if (!value) return "لم تُنشأ"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "لم تُنشأ"
-  return new Intl.DateTimeFormat("ar-AE", {
+  return new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ar-AE", {
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -303,6 +305,7 @@ export function AppSettings({
 }: AppSettingsProps) {
   const { theme, setTheme } = useTheme()
   const { palette, customPalette, setPalette, setCustomPalette } = useAppPalette()
+  const { language, direction, setLanguage } = useInterfaceLanguage()
   const downloadControllerRef = useRef<AbortController | null>(null)
   const backupInputRef = useRef<HTMLInputElement>(null)
   const backupSectionRef = useRef<HTMLDivElement>(null)
@@ -1084,7 +1087,7 @@ export function AppSettings({
         side="right"
         showCloseButton={false}
         className="flex h-full w-full flex-col gap-0 p-0 text-right sm:max-w-md"
-        dir="rtl"
+        dir={direction}
       >
         <SheetHeader className="flex flex-row items-start justify-between gap-4 border-b px-5 py-4 text-right">
           <div className="min-w-0 space-y-1 text-right">
@@ -1102,8 +1105,8 @@ export function AppSettings({
           </Button>
         </SheetHeader>
 
-        <Tabs defaultValue={initialTab} className="flex min-h-0 flex-1 flex-col gap-0 text-right" dir="rtl">
-          <TabsList className="grid h-auto w-full grid-cols-4 rounded-none border-b bg-muted/20 p-0" dir="rtl" data-settings-tabs>
+        <Tabs defaultValue={initialTab} className="flex min-h-0 flex-1 flex-col gap-0 text-right" dir={direction}>
+          <TabsList className="grid h-auto w-full grid-cols-4 rounded-none border-b bg-muted/20 p-0" dir={direction} data-settings-tabs>
             <TabsTrigger value="reading" className="min-h-14 min-w-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-1 py-2 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-none">
               <BookOpen className="size-4" aria-hidden="true" />
               <span>القراءة</span>
@@ -1915,6 +1918,22 @@ export function AppSettings({
           </TabsContent>
 
           <TabsContent value="install" className="space-y-5 overflow-y-auto px-5 py-6">
+            <div className="space-y-2 border-b pb-5" data-language-settings>
+              <Label htmlFor="interface-language" className="flex items-center gap-2 font-semibold">
+                <Languages className="size-4 text-primary" />
+                لغة الواجهة
+              </Label>
+              <Select value={language} onValueChange={(value) => setLanguage(value as "ar" | "en")} dir={direction}>
+                <SelectTrigger id="interface-language" className="w-full" aria-label="اختر لغة واجهة التطبيق">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent dir={direction}>
+                  <SelectItem value="ar">العربية</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="flex flex-col items-center border-b pb-6 text-center">
               <div className="mb-3 grid size-14 place-items-center rounded-md bg-primary text-primary-foreground">
                 {isInstalled ? <CheckCircle2 className="size-7" /> : <Smartphone className="size-7" />}
@@ -1969,7 +1988,7 @@ export function AppSettings({
                 <h3 className="font-semibold text-foreground">النسخ الاحتياطي</h3>
                 <p className="mt-1 text-xs text-muted-foreground">العلامات والخطط والمراجعات والإعدادات، دون ملفات الصوت.</p>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  آخر نسخة احتياطية: <span className="font-medium text-foreground">{formatBackupDate(lastBackupAt)}</span>
+                  آخر نسخة احتياطية: <span className="font-medium text-foreground">{formatBackupDate(lastBackupAt, language)}</span>
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-2">

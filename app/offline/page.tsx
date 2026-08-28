@@ -11,7 +11,7 @@ export default function OfflinePage() {
           <WifiOff className="size-4" />
           <span className="text-sm">لا يوجد اتصال بالإنترنت</span>
         </div>
-        <h1 className="text-2xl font-bold">وِرد</h1>
+        <h1 className="text-2xl font-bold">وِردي</h1>
         <p className="mt-2 text-sm leading-7 text-muted-foreground">
           الصفحات التي فتحتها سابقًا قد تبقى متاحة. أعد الاتصال لتحميل تلاوات وصفحات جديدة.
         </p>

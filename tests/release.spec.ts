@@ -8,6 +8,97 @@ async function openMushaf(page: Page) {
   await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
 }
 
+test("يحوّل لغة الواجهة ويحفظها دون تغيير النص القرآني", async ({ page }) => {
+  await openMushaf(page)
+  await expect(page.locator("html")).toHaveAttribute("lang", "ar")
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl")
+  const originalQuran = await page.locator("[data-quran-text-page]").first().innerText()
+
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التطبيق" }).click()
+  await page.getByLabel("اختر لغة واجهة التطبيق").click()
+  await page.getByRole("option", { name: "English" }).click()
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "en")
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr")
+  expect(await page.locator("[data-quran-text-page]").first().evaluate((element) => getComputedStyle(element).direction)).toBe("rtl")
+  await expect(page.getByRole("heading", { name: "Wirdy settings" })).toBeVisible()
+  await expect(page.getByLabel("Choose the app interface language")).toHaveText("English")
+  expect(await page.evaluate(() => window.localStorage.getItem("wird-interface-language-v1"))).toBe("en")
+  expect(await page.locator("[data-quran-text-page]").first().innerText()).toBe(originalQuran)
+
+  await page.getByRole("button", { name: "Close settings" }).click()
+  await page.reload({ waitUntil: "networkidle" })
+  await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
+  await expect(page.locator("html")).toHaveAttribute("lang", "en")
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr")
+  await expect(page.getByRole("button", { name: "App settings" })).toBeVisible()
+  expect(await page.locator("[data-quran-text-page]").first().innerText()).toBe(originalQuran)
+})
+
+test("يدعم البحث الإنجليزي البنيوي وأسماء السور الرسمية", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem("wird-interface-language-v1", "en"))
+  await openMushaf(page)
+  await page.getByRole("button", { name: /Open search and navigation/ }).click()
+  const search = page.getByLabel("Quick Quran search").first()
+  const queries = [
+    ["Baqarah", "surah-2", "Surah Al-Baqarah"],
+    ["Al-Kahf", "surah-18", "Surah Al-Kahf"],
+    ["Surah Yasin", "surah-36", "Surah Ya-Sin"],
+    ["Juz 5", "juz-5", "Juz 5"],
+    ["Hizb 12", "hizb-12", "Hizb 12"],
+    ["Page 42", "page-42", "Page 42"],
+    ["2:255", "verse-2:255", "Surah Al-Baqarah"],
+  ] as const
+
+  for (const [query, resultId, expectedLabel] of queries) {
+    await search.fill(query)
+    await expect(page.locator(`button[data-search-id="${resultId}"]:visible`)).toContainText(expectedLabel)
+  }
+})
+
+test("يبقي البحث العربي فعالًا بعد إضافة اللغة الإنجليزية", async ({ page }) => {
+  await openMushaf(page)
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  const search = page.locator('input[aria-label="البحث السريع في القرآن"]:visible').first()
+
+  await search.fill("سورة الكهف")
+  await expect(page.locator('button[data-search-id="surah-18"]:visible')).toContainText("سورة الكَهف")
+  await search.fill("الجزء 5")
+  await expect(page.locator('button[data-search-id="juz-5"]:visible')).toContainText("الجزء 5")
+  await search.fill("آية الكرسي")
+  await expect(page.locator('button[data-verse-key="2:255"]:visible')).toBeVisible()
+})
+
+test("يشغّل الواجهة الإنجليزية والبحث المحلي دون اتصال", async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => window.localStorage.setItem("wird-interface-language-v1", "en"))
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?release=english-offline-test", {
+      scope: "/",
+      updateViaCache: "none",
+    })
+    await navigator.serviceWorker.ready
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  await expect(page.getByRole("button", { name: "App settings" })).toBeVisible()
+
+  await context.setOffline(true)
+  try {
+    await page.goto("/?english-offline=1", { waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
+    await expect(page.locator("html")).toHaveAttribute("lang", "en")
+    await page.getByRole("button", { name: /Open search and navigation/ }).click()
+    await page.getByLabel("Quick Quran search").first().fill("Juz 5")
+    await expect(page.locator('button[data-search-id="juz-5"]:visible')).toContainText("Juz 5")
+    await expect(page.getByText("No internet connection")).toHaveCount(0)
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
 test("يعرض المصحف دون أخطاء أو تجاوز أفقي", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
@@ -675,6 +766,7 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
+  expect(workerSource).toContain('VERSION = `wird-v47-')
   expect(workerSource).toContain('QURAN_CACHE = "wird-quran-v1"')
   expect(workerSource).toContain("APP_CACHE_GENERATIONS = 3")
   expect(workerSource).toContain("precacheAppShell()")

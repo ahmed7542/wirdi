@@ -547,10 +547,13 @@ export function QuranNavigation({
                     <span className="block text-xs font-semibold text-primary">
                       {result.title ?? result.verseKey} · صفحة {formatNumber(result.page)}
                     </span>
-                    <span className={cn(
-                      "mt-1 block line-clamp-2",
-                      result.kind === "verse" || !result.kind ? "font-quran text-xl leading-9" : "text-sm leading-6",
-                    )}>{result.text}</span>
+                    <span
+                      className={cn(
+                        "mt-1 block line-clamp-2",
+                        result.kind === "verse" || !result.kind ? "font-quran text-xl leading-9" : "text-sm leading-6",
+                      )}
+                      data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
+                    >{result.text}</span>
                   </button>
 
                 </div>

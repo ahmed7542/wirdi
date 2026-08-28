@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "وِرد | رفيق الحفظ والمراجعة",
-    short_name: "وِرد",
+    name: "وِردي | رفيق الحفظ والمراجعة",
+    short_name: "وِردي",
     description: "مصحف للحفظ والمراجعة بالتلاوة المتصلة والتكرار.",
     id: "/",
     start_url: "/",
