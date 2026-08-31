@@ -1,5 +1,5 @@
 const RELEASE = new URL(self.location.href).searchParams.get("release") || "base"
-const VERSION = `wird-v47-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
+const VERSION = `wird-v48-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
 const STATIC_CACHE = `${VERSION}-static`
 const PAGE_CACHE = `${VERSION}-pages`
 const QURAN_CACHE = "wird-quran-v1"
@@ -110,9 +110,15 @@ self.addEventListener("message", (event) => {
         return parsed.origin === self.location.origin && parsed.pathname.startsWith("/_next/static/")
       })
       const results = await Promise.allSettled(urls.map(async (url) => {
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`Unable to cache ${url}`)
-        await cache.put(url, response)
+        try {
+          const response = await fetch(url)
+          if (!response.ok) throw new Error(`Unable to cache ${url}`)
+          await cache.put(url, response)
+        } catch (error) {
+          const cached = await matchCachedStaticAsset(url)
+          if (!cached) throw error
+          await cache.put(url, cached.clone())
+        }
       }))
       event.ports[0]?.postMessage({
         type: "APP_SHELL_CACHED",
@@ -251,10 +257,21 @@ async function networkFirst(request, cacheName) {
   }
 }
 
+async function matchCachedStaticAsset(request) {
+  const exact = await caches.match(request)
+  if (exact) return exact
+  const url = new URL(typeof request === "string" ? request : request.url, self.location.origin)
+  if (url.origin !== self.location.origin || !url.pathname.startsWith("/_next/static/")) return undefined
+  return caches.match(request, { ignoreSearch: true })
+}
+
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName)
-  const cached = (await cache.match(request)) || (await caches.match(request))
-  if (cached) return cached
+  const cached = (await cache.match(request)) || (await matchCachedStaticAsset(request))
+  if (cached) {
+    if (!(await cache.match(request))) await cache.put(request, cached.clone())
+    return cached
+  }
   const response = await fetch(request)
   if (response.ok || response.type === "opaque") await cache.put(request, response.clone())
   return response

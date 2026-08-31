@@ -1,6 +1,5 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import Image from "next/image"
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type TouchEvent, type WheelEvent as ReactWheelEvent } from "react"
 import { getSurahMeta, type Surah } from "quran-meta/hafs"
@@ -55,24 +54,33 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import type {
-  AppTextScale,
-  AppSettingsTab,
-  AudioReviewRevealMode,
-  DownloadReciter,
-  SearchGestureDirection,
+import {
+  AppSettings,
+  type AppTextScale,
+  type AppSettingsTab,
+  type AudioReviewRevealMode,
+  type DownloadReciter,
+  type SearchGestureDirection,
 } from "@/components/app-settings"
 import { useInterfaceLanguage, type InterfaceLanguage } from "@/components/interface-language-provider"
-import type { LearningPlanRange } from "@/components/learning-plan"
-import type { MutashabihatContextVerse } from "@/components/mutashabihat-following-context"
-import type {
-  DashboardBookmark,
-  DashboardReviewDetail,
-} from "@/components/wird-dashboard"
-import type {
-  BrowseActivity,
-  NavigationRange,
+import { KhatmaPlanner } from "@/components/khatma-planner"
+import { LearningPlanDialog, type LearningPlanRange } from "@/components/learning-plan"
+import {
+  MutashabihatFollowingContext,
+  type MutashabihatContextVerse,
+} from "@/components/mutashabihat-following-context"
+import {
+  QuranNavigation,
+  QuranSessionRangePicker,
+  type BrowseActivity,
+  type NavigationRange,
 } from "@/components/quran-navigation"
+import { SessionRangeDownload } from "@/components/session-range-download"
+import {
+  WirdDashboard,
+  type DashboardBookmark,
+  type DashboardReviewDetail,
+} from "@/components/wird-dashboard"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -208,15 +216,6 @@ import {
   type WirdSessionMode,
   type WirdTestKind,
 } from "@/lib/wird-activity"
-
-const AppSettings = dynamic(() => import("@/components/app-settings").then((module) => module.AppSettings))
-const KhatmaPlanner = dynamic(() => import("@/components/khatma-planner").then((module) => module.KhatmaPlanner))
-const LearningPlanDialog = dynamic(() => import("@/components/learning-plan").then((module) => module.LearningPlanDialog))
-const MutashabihatFollowingContext = dynamic(() => import("@/components/mutashabihat-following-context").then((module) => module.MutashabihatFollowingContext))
-const QuranNavigation = dynamic(() => import("@/components/quran-navigation").then((module) => module.QuranNavigation))
-const QuranSessionRangePicker = dynamic(() => import("@/components/quran-navigation").then((module) => module.QuranSessionRangePicker))
-const SessionRangeDownload = dynamic(() => import("@/components/session-range-download").then((module) => module.SessionRangeDownload))
-const WirdDashboard = dynamic(() => import("@/components/wird-dashboard").then((module) => module.WirdDashboard))
 
 type AudioTrack = {
   chapterId: number
@@ -1032,6 +1031,8 @@ export function QuranPlayer() {
   const largeReadingGenerationRef = useRef(0)
   const largeReadingLoadingRef = useRef(false)
   const largeReadingRetryAtRef = useRef(0)
+  const largeReadingAppendBlockedRef = useRef(false)
+  const continuousOfflineNoticeShownRef = useRef(false)
   const continuousPageScrollStartedRef = useRef(false)
   const continuousScrollPositionRef = useRef<number | null>(null)
   const continuousScrollPausedAtRef = useRef<number | null>(null)
@@ -1467,7 +1468,11 @@ export function QuranPlayer() {
     const handleProgress = (event: Event) => {
       setOfflineTafsirStatus((event as CustomEvent<OfflineTafsirStatus>).detail)
     }
-    const handleOnline = () => setNetworkOnline(true)
+    const handleOnline = () => {
+      largeReadingAppendBlockedRef.current = false
+      continuousOfflineNoticeShownRef.current = false
+      setNetworkOnline(true)
+    }
     const handleOffline = () => setNetworkOnline(false)
     setNetworkOnline(navigator.onLine)
     window.addEventListener(OFFLINE_TAFSIR_PROGRESS_EVENT, handleProgress)
@@ -2306,12 +2311,14 @@ export function QuranPlayer() {
     const root = document.documentElement
     root.dataset.wirdFullscreen = String(isFullscreen)
     root.dataset.wirdPracticeActive = String(practiceActive)
+    root.dataset.wirdAutoScroll = String(continuousAutoScroll)
     window.dispatchEvent(new Event("wird-player-state-changed"))
-  }, [isFullscreen, practiceActive])
+  }, [continuousAutoScroll, isFullscreen, practiceActive])
 
   useEffect(() => () => {
     delete document.documentElement.dataset.wirdFullscreen
     delete document.documentElement.dataset.wirdPracticeActive
+    delete document.documentElement.dataset.wirdAutoScroll
   }, [])
 
   useEffect(() => {
@@ -2664,9 +2671,12 @@ export function QuranPlayer() {
       largeReadingPagesRef.current = nextPages
       setLargeReadingPages(nextPages)
       largeReadingRetryAtRef.current = 0
+      largeReadingAppendBlockedRef.current = false
+      continuousOfflineNoticeShownRef.current = false
       return true
     } catch {
       largeReadingRetryAtRef.current = Date.now() + 1500
+      largeReadingAppendBlockedRef.current = true
       return false
     } finally {
       largeReadingLoadingRef.current = false
@@ -2994,6 +3004,20 @@ export function QuranPlayer() {
       const remainingDistance = container.scrollHeight - container.scrollTop - container.clientHeight
       if (remainingDistance < container.clientHeight * 2) void appendNextContinuousPage()
       const reachedEnd = remainingDistance <= 1
+      if (reachedEnd && largeReadingAppendBlockedRef.current) {
+        continuousScrollPositionRef.current = null
+        continuousScrollPausedAtRef.current = Date.now()
+        continuousScrollPausedRef.current = true
+        content.style.removeProperty("transform")
+        setContinuousScrollPaused(true)
+        if (!continuousOfflineNoticeShownRef.current) {
+          continuousOfflineNoticeShownRef.current = true
+          toast.info("توقف التمرير مؤقتًا عند آخر صفحة محفوظة. نزّل الصفحات التالية عند توفر الإنترنت.", {
+            duration: 6_000,
+          })
+        }
+        return
+      }
       if (reachedEnd && largeReadingPagesRef.current.at(-1)?.page === MAX_PAGE) {
         setContinuousAutoScroll(false)
         setContinuousScrollStopAt(null)
@@ -3712,6 +3736,8 @@ export function QuranPlayer() {
       setSpreadMode("single")
     }
     const mode = isPlaying && hasVerseSynchronization ? "recitation" : "free"
+    largeReadingAppendBlockedRef.current = false
+    continuousOfflineNoticeShownRef.current = false
     continuousScrollPausedAtRef.current = null
     continuousScrollPausedRef.current = false
     continuousScrollModeRef.current = mode
@@ -3738,6 +3764,8 @@ export function QuranPlayer() {
       window.cancelAnimationFrame(continuousRecitationScrollFrameRef.current)
       continuousRecitationScrollFrameRef.current = null
     }
+    largeReadingAppendBlockedRef.current = false
+    continuousOfflineNoticeShownRef.current = false
     continuousScrollPausedAtRef.current = null
     continuousScrollPausedRef.current = false
     continuousScrollModeRef.current = "free"
@@ -3761,6 +3789,8 @@ export function QuranPlayer() {
   }
 
   const resumeContinuousScroll = () => {
+    largeReadingAppendBlockedRef.current = false
+    continuousOfflineNoticeShownRef.current = false
     const pausedAt = continuousScrollPausedAtRef.current
     if (pausedAt !== null) {
       const pausedDuration = Date.now() - pausedAt

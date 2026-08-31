@@ -104,6 +104,7 @@ const REVIEWED_TRANSLATIONS: Record<string, string> = {
   "أصبحت المتشابهات متاحة دون إنترنت": "Similar verses are now available offline",
   "المتشابهات جاهزة دون إنترنت": "Similar verses are ready offline",
   "التفسير متاح دون إنترنت": "Tafsir is available offline",
+  "توقف التمرير مؤقتًا عند آخر صفحة محفوظة. نزّل الصفحات التالية عند توفر الإنترنت.": "Auto-scroll paused at the last saved page. Download the following pages when you are online.",
   "التنزيلات": "Downloads",
   "تنزيل التلاوات": "Download recitations",
   "تنزيل المصحف كاملًا": "Download the complete Quran",

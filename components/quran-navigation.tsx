@@ -1,10 +1,13 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { BookOpen, ChevronUp, Headphones, History, LoaderCircle, Mic, RefreshCw, Search, Shuffle } from "lucide-react"
 
 import { useInterfaceLanguage } from "@/components/interface-language-provider"
+import {
+  QuranLocationPicker,
+  SessionRangeSearchPicker,
+} from "@/components/session-range-search-picker"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,13 +23,6 @@ import {
 } from "@/lib/quran-smart-search"
 import { loadRecentReadingLocations, type RecentReadingLocation } from "@/lib/recent-reading"
 import { cn } from "@/lib/utils"
-
-const SessionRangeSearchPicker = dynamic(() =>
-  import("@/components/session-range-search-picker").then((module) => module.SessionRangeSearchPicker),
-)
-const QuranLocationPicker = dynamic(() =>
-  import("@/components/session-range-search-picker").then((module) => module.QuranLocationPicker),
-)
 
 export type NavigationRange = {
   startPage: number

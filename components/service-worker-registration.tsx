@@ -14,9 +14,11 @@ const DISMISSED_UPDATE_KEY = "wird-dismissed-update-v1"
 function canDisplayUpdatePrompt() {
   const root = document.documentElement
   return document.visibilityState === "visible" &&
+    navigator.onLine !== false &&
     !document.fullscreenElement &&
     root.dataset.wirdFullscreen !== "true" &&
-    root.dataset.wirdPracticeActive !== "true"
+    root.dataset.wirdPracticeActive !== "true" &&
+    root.dataset.wirdAutoScroll !== "true"
 }
 
 function getDocumentStaticAssetUrls(target: Document) {
@@ -94,12 +96,16 @@ export function ServiceWorkerRegistration() {
   }, [])
 
   const activateWaitingWorker = useCallback(async (worker: ServiceWorker) => {
-    if (reloadRequestedRef.current) return
+    if (reloadRequestedRef.current || navigator.onLine === false || !canDisplayUpdatePrompt()) return
     window.localStorage.removeItem(DISMISSED_UPDATE_KEY)
+    setUpdating(true)
+    const shellReady = await cacheAppShell(worker, staticUrlsRef.current)
+    if (!shellReady) {
+      setUpdating(false)
+      return
+    }
     window.dispatchEvent(new Event("wird-before-app-update"))
     reloadRequestedRef.current = true
-    setUpdating(true)
-    await cacheAppShell(worker, staticUrlsRef.current)
     worker.postMessage({ type: "SKIP_WAITING" })
   }, [])
 
@@ -123,7 +129,7 @@ export function ServiceWorkerRegistration() {
 
     const offerUpdate = (worker: ServiceWorker | null, activateOnOpen = false) => {
       if (disposed || !worker || !navigator.serviceWorker.controller) return
-      if (activateOnOpen) {
+      if (activateOnOpen && canDisplayUpdatePrompt()) {
         void activateWaitingWorker(worker)
         return
       }
@@ -165,6 +171,7 @@ export function ServiceWorkerRegistration() {
         reloadRequestedRef.current ||
         !registration ||
         document.visibilityState !== "visible" ||
+        navigator.onLine === false ||
         updateCheckInFlight
       ) return
       const now = Date.now()
@@ -215,6 +222,13 @@ export function ServiceWorkerRegistration() {
       requestUpdate()
     }
 
+    const handleOnline = () => {
+      refreshPromptAvailability()
+      if (registration?.waiting) offerUpdate(registration.waiting)
+      else requestUpdate()
+    }
+    const handleOffline = () => refreshPromptAvailability()
+
     const handleControllerChange = () => {
       setWaitingWorker(null)
       if (!reloadRequestedRef.current) return
@@ -226,6 +240,8 @@ export function ServiceWorkerRegistration() {
     document.addEventListener("fullscreenchange", refreshPromptAvailability)
     document.addEventListener("visibilitychange", handleVisibilityChange)
     window.addEventListener("pageshow", handlePageShow)
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
     window.addEventListener("wird-player-state-changed", refreshPromptAvailability)
     navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange)
 
@@ -256,6 +272,8 @@ export function ServiceWorkerRegistration() {
       document.removeEventListener("fullscreenchange", refreshPromptAvailability)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
       window.removeEventListener("pageshow", handlePageShow)
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
       window.removeEventListener("wird-player-state-changed", refreshPromptAvailability)
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange)
       registrationRef.current = null

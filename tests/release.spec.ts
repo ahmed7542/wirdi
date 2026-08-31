@@ -846,11 +846,108 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
-  expect(workerSource).toContain('VERSION = `wird-v47-')
+  expect(workerSource).toContain('VERSION = `wird-v48-')
   expect(workerSource).toContain('QURAN_CACHE = "wird-quran-v1"')
+  expect(workerSource).toContain("matchCachedStaticAsset")
   expect(workerSource).toContain("APP_CACHE_GENERATIONS = 3")
   expect(workerSource).toContain("precacheAppShell()")
   expect((await pageResponse.json()).tracks[0].audioUrl).toContain("archive.org")
+})
+
+test("يعيد ملف واجهة Next المحفوظ عند اختلاف معامل النشر دون شبكة", async ({ page, context }) => {
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?release=offline-static-query-test", {
+      scope: "/",
+      updateViaCache: "none",
+    })
+    await navigator.serviceWorker.ready
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+
+  const staticAsset = await page.locator('script[src*="/_next/static/"]').first().getAttribute("src")
+  expect(staticAsset).toBeTruthy()
+  await expect.poll(() => page.evaluate(async (url) => Boolean(await caches.match(url!)), staticAsset)).toBe(true)
+  const alternateAsset = new URL(staticAsset!, "http://127.0.0.1:3000")
+  alternateAsset.searchParams.set("dpl", "offline-query-change")
+
+  await context.setOffline(true)
+  try {
+    const result = await page.evaluate(async (url) => {
+      const response = await fetch(url)
+      return { ok: response.ok, status: response.status, size: (await response.text()).length }
+    }, `${alternateAsset.pathname}${alternateAsset.search}`)
+    expect(result.ok).toBe(true)
+    expect(result.status).toBe(200)
+    expect(result.size).toBeGreaterThan(100)
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
+test("يوقف التمرير عند آخر صفحة محفوظة دون إسقاط الواجهة", async ({ page, context }) => {
+  test.setTimeout(120_000)
+  const pageErrors: string[] = []
+  const failedScripts: string[] = []
+  page.on("pageerror", (error) => pageErrors.push(error.message))
+  page.on("requestfailed", (request) => {
+    if (request.resourceType() === "script") failedScripts.push(request.url())
+  })
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wird-last-reading-v1", JSON.stringify({
+      page: 120,
+      positionMs: 0,
+      reciter: 6,
+      viewMode: "text",
+      readingMode: "page",
+      updatedAt: Date.now(),
+    }))
+  })
+
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?release=offline-auto-scroll-test", {
+      scope: "/",
+      updateViaCache: "none",
+    })
+    await navigator.serviceWorker.ready
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  await expect(page.getByLabel("صفحة 120 من المصحف الشريف")).toBeVisible()
+
+  await context.setOffline(true)
+  try {
+    await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+    await expect(page.getByRole("heading", { name: "إعدادات وِرد" })).toBeVisible()
+    await page.getByRole("button", { name: "إغلاق الإعدادات" }).click()
+    await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+    await expect(page.getByRole("heading", { name: "لوحة وِرد" })).toBeAttached()
+    await page.getByRole("button", { name: "العودة إلى المصحف" }).click()
+
+    await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()
+    const scrollContainer = page.locator("[data-quran-scroll-container]")
+    await expect(scrollContainer).toBeVisible()
+    await expect(page.locator("html")).toHaveAttribute("data-wird-auto-scroll", "true")
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await scrollContainer.evaluate((element) => { element.scrollTop = element.scrollHeight })
+      if (await page.getByRole("button", { name: "استئناف التمرير التلقائي" }).count()) break
+      await page.waitForTimeout(500)
+    }
+
+    await expect(page.getByRole("button", { name: "استئناف التمرير التلقائي" })).toBeVisible()
+    await expect(page.getByText("توقف التمرير مؤقتًا عند آخر صفحة محفوظة. نزّل الصفحات التالية عند توفر الإنترنت.")).toBeVisible()
+    await expect(page.locator('[data-large-reading-page="120"]')).toBeVisible()
+    await expect(page.getByText("تعذر إكمال هذه الشاشة")).toHaveCount(0)
+    await expect(page.getByText("Something went wrong")).toHaveCount(0)
+    await expect(page.getByText("نسخة جديدة جاهزة")).toHaveCount(0)
+    expect(pageErrors).toEqual([])
+    expect(failedScripts).toEqual([])
+  } finally {
+    await context.setOffline(false)
+  }
 })
 
 test("يعيد فتح رابط التطبيق المحفوظ دون شبكة", async ({ page, context }) => {
