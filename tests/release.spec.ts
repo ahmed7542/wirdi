@@ -15,15 +15,15 @@ test("يحوّل لغة الواجهة ويحفظها دون تغيير النص
   const originalQuran = await page.locator("[data-quran-text-page]").first().innerText()
 
   await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
-  await page.getByRole("tab", { name: "التطبيق" }).click()
-  await page.getByLabel("اختر لغة واجهة التطبيق").click()
-  await page.getByRole("option", { name: "English" }).click()
+  const languageControl = page.locator('[data-settings-content="reading"] [data-language-control]')
+  await expect(languageControl).toBeVisible()
+  await languageControl.locator('[data-language-option="en"]').click()
 
   await expect(page.locator("html")).toHaveAttribute("lang", "en")
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr")
   expect(await page.locator("[data-quran-text-page]").first().evaluate((element) => getComputedStyle(element).direction)).toBe("rtl")
   await expect(page.getByRole("heading", { name: "Wirdy settings" })).toBeVisible()
-  await expect(page.getByLabel("Choose the app interface language")).toHaveText("English")
+  await expect(languageControl.locator('[data-language-option="en"]')).toHaveAttribute("data-state", "on")
   expect(await page.evaluate(() => window.localStorage.getItem("wird-interface-language-v1"))).toBe("en")
   expect(await page.locator("[data-quran-text-page]").first().innerText()).toBe(originalQuran)
 
@@ -543,6 +543,78 @@ test("يحمل الإعدادات عند الطلب ويحافظ على تباي
   await expect(page.getByRole("button", { name: "الألوان" })).toBeVisible()
   const results = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze()
   expect(results.violations).toEqual([])
+})
+
+test("يثبت قياسات تبويبات الإعدادات وينقل اللغة إلى القراءة", async ({ page }) => {
+  await openMushaf(page)
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+
+  const settingsTabs = page.locator("[data-settings-tabs]")
+  const readingContent = page.locator('[data-settings-content="reading"]')
+  const languageSettings = readingContent.locator("[data-language-settings]")
+  const languageOptions = languageSettings.locator("[data-language-option]")
+
+  const assertTabGeometry = async (expectedFontSize: string) => {
+    const listBox = (await settingsTabs.boundingBox())!
+    const tabBoxes = await settingsTabs.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => {
+      const tabBox = tab.getBoundingClientRect()
+      const iconBox = tab.querySelector("svg")!.getBoundingClientRect()
+      const indicator = tab.querySelector<HTMLElement>("[data-settings-tab-indicator]")!
+      const indicatorBox = indicator.getBoundingClientRect()
+      return {
+        x: tabBox.x,
+        y: tabBox.y,
+        width: tabBox.width,
+        height: tabBox.height,
+        iconWidth: iconBox.width,
+        iconHeight: iconBox.height,
+        indicatorY: indicatorBox.y,
+        indicatorWidth: indicatorBox.width,
+        indicatorHeight: indicatorBox.height,
+        fontSize: getComputedStyle(tab).fontSize,
+      }
+    }))
+
+    expect(listBox.height).toBe(56)
+    expect(tabBoxes).toHaveLength(4)
+    expect(Math.max(...tabBoxes.map((box) => box.width)) - Math.min(...tabBoxes.map((box) => box.width))).toBeLessThan(1)
+    for (const box of tabBoxes) {
+      expect(box.y).toBeCloseTo(listBox.y, 1)
+      expect(box.height).toBe(56)
+      expect(box.iconWidth).toBe(17)
+      expect(box.iconHeight).toBe(17)
+      expect(box.indicatorY).toBeCloseTo(listBox.y + 53, 1)
+      expect(box.indicatorWidth).toBeCloseTo(box.width, 1)
+      expect(box.indicatorHeight).toBe(3)
+      expect(box.fontSize).toBe(expectedFontSize)
+    }
+
+    const contentBox = (await readingContent.boundingBox())!
+    expect(contentBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
+    const activeIndicatorColor = await settingsTabs.locator('[role="tab"][data-state="active"] [data-settings-tab-indicator]').evaluate(
+      (indicator) => getComputedStyle(indicator).backgroundColor,
+    )
+    expect(activeIndicatorColor).not.toBe("rgba(0, 0, 0, 0)")
+  }
+
+  await expect(languageSettings).toBeVisible()
+  await expect(languageOptions).toHaveCount(2)
+  await expect(languageOptions).toHaveText(["العربية", "English"])
+  const optionWidths = await languageOptions.evaluateAll((options) => options.map((option) => option.getBoundingClientRect().width))
+  expect(Math.abs(optionWidths[0] - optionWidths[1])).toBeLessThan(1)
+  await expect(page.locator('[data-settings-content="install"] [data-language-settings]')).toHaveCount(0)
+  await assertTabGeometry("11px")
+
+  await languageSettings.locator('[data-language-option="en"]').click()
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr")
+  await expect(languageOptions).toHaveText(["العربية", "English"])
+  expect(await page.evaluate(() => window.localStorage.getItem("wird-interface-language-v1"))).toBe("en")
+  await assertTabGeometry("11px")
+
+  await page.setViewportSize({ width: 900, height: 844 })
+  await assertTabGeometry("12px")
+  await settingsTabs.getByRole("tab", { name: "App" }).click()
+  await expect(page.locator('[data-settings-content="install"] [data-language-settings]')).toHaveCount(0)
 })
 
 test("يوضح تبويبات الإعدادات ويحسن إدارة أقسام العلامات", async ({ page }) => {

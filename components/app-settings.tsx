@@ -1106,26 +1106,53 @@ export function AppSettings({
         </SheetHeader>
 
         <Tabs defaultValue={initialTab} className="flex min-h-0 flex-1 flex-col gap-0 text-right" dir={direction}>
-          <TabsList className="grid h-auto w-full grid-cols-4 rounded-none border-b bg-muted/20 p-0" dir={direction} data-settings-tabs>
-            <TabsTrigger value="reading" className="min-h-14 min-w-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-1 py-2 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-none">
-              <BookOpen className="size-4" aria-hidden="true" />
-              <span>القراءة</span>
-            </TabsTrigger>
-            <TabsTrigger value="bookmarks" className="min-h-14 min-w-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-1 py-2 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-none">
-              <Bookmark className="size-4" aria-hidden="true" />
-              <span>العلامات</span>
-            </TabsTrigger>
-            <TabsTrigger value="downloads" className="min-h-14 min-w-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-1 py-2 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-none">
-              <Download className="size-4" aria-hidden="true" />
-              <span>التنزيلات</span>
-            </TabsTrigger>
-            <TabsTrigger value="install" className="min-h-14 min-w-0 flex-col gap-1 rounded-none border-b-2 border-transparent px-1 py-2 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-none">
-              <Smartphone className="size-4" aria-hidden="true" />
-              <span>التطبيق</span>
-            </TabsTrigger>
+          <TabsList className="grid h-14 min-h-14 w-full grid-cols-4 gap-0 rounded-none border-b bg-muted/20 p-0" dir={direction} data-settings-tabs>
+            {([
+              ["reading", "القراءة", BookOpen],
+              ["bookmarks", "العلامات", Bookmark],
+              ["downloads", "التنزيلات", Download],
+              ["install", "التطبيق", Smartphone],
+            ] as const).map(([value, label, Icon]) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="group relative h-14 min-h-14 min-w-0 max-h-14 flex-col gap-0.5 rounded-none border-0 bg-transparent px-1 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-none data-[state=active]:bg-background/75 data-[state=active]:text-primary data-[state=active]:shadow-none sm:text-xs"
+              >
+                <Icon className="size-[17px] shrink-0" aria-hidden="true" />
+                <span className="leading-4">{label}</span>
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-[3px] bg-transparent group-data-[state=active]:bg-primary"
+                  data-settings-tab-indicator
+                />
+              </TabsTrigger>
+            ))}
           </TabsList>
 
-          <TabsContent value="reading" className="space-y-5 overflow-y-auto px-5 py-5">
+          <TabsContent value="reading" className="space-y-5 overflow-y-auto px-5 py-5" data-settings-content="reading">
+            <section className="space-y-2 border-b pb-5" data-language-settings>
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Languages className="size-[17px] text-primary" aria-hidden="true" />
+                <span>لغة الواجهة</span>
+              </div>
+              <ToggleGroup
+                type="single"
+                value={language}
+                onValueChange={(value) => value && setLanguage(value as "ar" | "en")}
+                variant="outline"
+                className="grid h-10 w-full grid-cols-2 gap-0"
+                aria-label="اختر لغة واجهة التطبيق"
+                data-language-control
+              >
+                <ToggleGroupItem value="ar" className="h-10 min-w-0 rounded-e-none text-sm font-semibold" data-language-option="ar">
+                  <span data-no-interface-translation>العربية</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="en" className="h-10 min-w-0 rounded-s-none text-sm font-semibold" data-language-option="en">
+                  <span data-no-interface-translation>English</span>
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </section>
+
             <Accordion type="multiple" defaultValue={["display"]} className="border-y">
               <AccordionItem value="display">
                 <AccordionTrigger className="py-3.5 text-right hover:no-underline">
@@ -1917,23 +1944,7 @@ export function AppSettings({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="install" className="space-y-5 overflow-y-auto px-5 py-6">
-            <div className="space-y-2 border-b pb-5" data-language-settings>
-              <Label htmlFor="interface-language" className="flex items-center gap-2 font-semibold">
-                <Languages className="size-4 text-primary" />
-                لغة الواجهة
-              </Label>
-              <Select value={language} onValueChange={(value) => setLanguage(value as "ar" | "en")} dir={direction}>
-                <SelectTrigger id="interface-language" className="w-full" aria-label="اختر لغة واجهة التطبيق">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent dir={direction}>
-                  <SelectItem value="ar">العربية</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+          <TabsContent value="install" className="space-y-5 overflow-y-auto px-5 py-6" data-settings-content="install">
             <div className="flex flex-col items-center border-b pb-6 text-center">
               <div className="mb-3 grid size-14 place-items-center rounded-md bg-primary text-primary-foreground">
                 {isInstalled ? <CheckCircle2 className="size-7" /> : <Smartphone className="size-7" />}
