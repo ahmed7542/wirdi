@@ -824,13 +824,27 @@ test("يحفظ آخر صفحة مرئية من مقرر الختمة مع بقا
     element.scrollTop = target.offsetTop
   })
   await expect(page.locator("[data-continuous-reader-bar]")).toHaveAttribute("aria-label", /الصفحة 6/)
+  expect(await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null").completedPage)).toBe(4)
+
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  const savedOnDashboard = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
+  expect(savedOnDashboard.completedPage).toBe(6)
+  expect(savedOnDashboard.startPage).toBe(5)
+  expect(savedOnDashboard.pageCount).toBe(3)
+
+  await page.getByRole("button", { name: "العودة إلى المصحف" }).click()
   await page.getByRole("button", { name: "الخروج من التمرير التلقائي" }).click()
   await expect(page.getByLabel("صفحة 6 من المصحف الشريف")).toBeVisible()
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').fill("7")
+  await page.locator('button[data-search-id="page-7"]:visible').click()
+  await expect(page.getByLabel("صفحة 7 من المصحف الشريف")).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new Event("wird-before-app-update")))
 
-  const plan = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
-  expect(plan.completedPage).toBe(6)
-  expect(plan.startPage).toBe(5)
-  expect(plan.pageCount).toBe(3)
+  const planAfterRegularReading = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
+  expect(planAfterRegularReading.completedPage).toBe(6)
+  expect(planAfterRegularReading.startPage).toBe(5)
+  expect(planAfterRegularReading.pageCount).toBe(3)
 })
 
 test("يوضح أن تذكير الختمة يعمل داخل التطبيق", async ({ page }) => {

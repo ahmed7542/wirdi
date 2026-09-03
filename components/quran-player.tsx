@@ -5981,6 +5981,7 @@ export function QuranPlayer() {
 
   const openDashboardView = () => {
     persistActiveKhatmaProgress()
+    activeKhatmaRangeRef.current = null
     activeSessionIdRef.current = null
     pendingResumeSessionIdRef.current = null
     setBoundedSessionActive(false)
