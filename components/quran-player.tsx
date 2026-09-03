@@ -196,6 +196,7 @@ import {
   saveBookmarkCategories,
   type BookmarkCategory,
 } from "@/lib/bookmark-categories"
+import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
 import { sanitizeQuranSearchText } from "@/lib/quran-search-text"
 import { cn } from "@/lib/utils"
 import {
@@ -3334,25 +3335,27 @@ export function QuranPlayer() {
           if (cancelled) return
           const results = data.results ?? []
           const seen = new Set<string>()
-          const merged = [...localResults, ...results]
-            .map((result) => ({ ...result, id: result.id ?? `${result.kind ?? "verse"}-${result.verseKey}` }))
-            .filter((result) => {
-              if (seen.has(result.id)) return false
-              seen.add(result.id)
-              return true
-            })
-            .sort((first, second) => first.page - second.page || first.verseKey.localeCompare(second.verseKey))
+          const merged = rankQuranSearchResults(
+            [...localResults, ...results]
+              .map((result) => ({ ...result, id: result.id ?? `${result.kind ?? "verse"}-${result.verseKey}` }))
+              .filter((result) => {
+                if (seen.has(result.id)) return false
+                seen.add(result.id)
+                return true
+              }),
+            query,
+          )
           if (merged[0]) preloadNavigationPage(merged[0].page)
           setQuickNavigatorResults(merged)
           setQuickNavigatorResultCount(Math.max(merged.length, (data.totalResults ?? results.length) + localResults.length))
         } catch {
           const offline = await searchOfflineQuran(query)
           if (cancelled) return
-          const merged = [...localResults, ...offline.results.map((result) => ({
+          const merged = rankQuranSearchResults([...localResults, ...offline.results.map((result) => ({
             ...result,
             id: `verse-${result.verseKey}`,
             kind: "verse" as const,
-          }))].sort((first, second) => first.page - second.page || first.verseKey.localeCompare(second.verseKey))
+          }))], query)
           if (merged[0]) preloadNavigationPage(merged[0].page)
           setQuickNavigatorResults(merged)
           setQuickNavigatorResultCount(Math.max(merged.length, offline.totalResults + localResults.length))

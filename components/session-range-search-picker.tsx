@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 import { searchOfflineQuran } from "@/lib/offline-quran-search"
+import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
 import {
   isQuranSearchQueryReady,
   isStructuralQuranSearch,
@@ -216,22 +217,33 @@ function mergeAndFilterResults(
   localResults: RangeSearchResult[],
   remoteResults: RangeSearchResult[],
   edge: "start" | "end",
+  query: string,
   minimumOrdinal?: number,
 ) {
   const seen = new Set<string>()
-  return [...localResults, ...remoteResults]
+  const filtered = [...localResults, ...remoteResults]
     .filter((result) => {
       if (seen.has(result.id)) return false
       seen.add(result.id)
       const target = edge === "start" ? result.start : result.end
       return minimumOrdinal === undefined || target.ordinal >= minimumOrdinal
     })
-    .sort((first, second) => {
-      const firstTarget = edge === "start" ? first.start : first.end
-      const secondTarget = edge === "start" ? second.start : second.end
-      return firstTarget.ordinal - secondTarget.ordinal || first.id.localeCompare(second.id)
-    })
-    .slice(0, 30)
+
+  if (isStructuralQuranSearch(query)) {
+    return filtered
+      .sort((first, second) => {
+        const firstTarget = edge === "start" ? first.start : first.end
+        const secondTarget = edge === "start" ? second.start : second.end
+        return firstTarget.ordinal - secondTarget.ordinal || first.id.localeCompare(second.id)
+      })
+      .slice(0, 30)
+  }
+
+  return rankQuranSearchResults(filtered.map((result) => ({
+    result,
+    verseKey: (edge === "start" ? result.start : result.end).verseKey,
+    text: result.text ?? "",
+  })), query).map(({ result }) => result).slice(0, 30)
 }
 
 function isRangeResultAvailable(
@@ -274,8 +286,8 @@ function RangeSearchField({
   const [isMobile, setIsMobile] = useState(false)
   const localResults = useMemo(() => localRangeSearch(data, query, language), [data, language, query])
   const results = useMemo(
-    () => mergeAndFilterResults(localResults, remoteResults, edge, minimumOrdinal),
-    [edge, localResults, minimumOrdinal, remoteResults],
+    () => mergeAndFilterResults(localResults, remoteResults, edge, query, minimumOrdinal),
+    [edge, localResults, minimumOrdinal, query, remoteResults],
   )
   const visibleNearbyResults = useMemo(
     () => nearbyResults.filter((result) => isRangeResultAvailable(result, edge, minimumOrdinal)),

@@ -107,6 +107,23 @@ test("يشغّل الواجهة الإنجليزية والبحث المحلي �
   }
 })
 
+test("يقدم تطابق عبارة الآية التام في API والبحث السريع", async ({ page, request }) => {
+  const query = "وهو العليم الحكيم"
+  const response = await request.get("/api/quran/navigation", { params: { q: query } })
+  expect(response.ok()).toBeTruthy()
+  const payload = await response.json() as { results: Array<{ verseKey: string }> }
+  expect(payload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
+
+  await openMushaf(page)
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').fill(query)
+  await expect(page.locator('button[data-verse-key="66:2"]:visible')).toBeVisible()
+  await expect(page.locator('button[data-verse-key="43:84"]:visible')).toBeVisible()
+  const visibleVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
+    .evaluateAll((results) => results.map((result) => result.getAttribute("data-verse-key")))
+  expect(visibleVerseKeys.slice(0, 2)).toEqual(["66:2", "43:84"])
+})
+
 test("يعرض المصحف دون أخطاء أو تجاوز أفقي", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))

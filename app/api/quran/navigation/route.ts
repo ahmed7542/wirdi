@@ -1,3 +1,4 @@
+import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
 import { sanitizeQuranSearchText } from "@/lib/quran-search-text"
 import {
   findPage,
@@ -229,7 +230,7 @@ export async function GET(request: Request) {
   try {
     const searchUrl = new URL(`${QURAN_API_URL}/search`)
     searchUrl.searchParams.set("q", query)
-    searchUrl.searchParams.set("size", "12")
+    searchUrl.searchParams.set("size", "50")
     searchUrl.searchParams.set("page", "0")
     const response = await fetch(searchUrl, { next: { revalidate: 60 * 60 * 24 } })
     if (response.status === 204) return Response.json({ results: [] })
@@ -249,7 +250,8 @@ export async function GET(request: Request) {
       }]
     })
     const seen = new Set(localResults.map((result) => result.verseKey))
-    const results = [...localResults, ...verseResults.filter((result) => !seen.has(result.verseKey))].slice(0, 12)
+    const rankedVerseResults = rankQuranSearchResults(verseResults, query)
+    const results = [...localResults, ...rankedVerseResults.filter((result) => !seen.has(result.verseKey))].slice(0, 12)
     const totalResults = (data.search?.total_results ?? verseResults.length) + localResults.length
 
     return Response.json({ results, totalResults }, {

@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { loadQuranNavigation } from "@/lib/offline-quran-navigation"
 import { searchOfflineQuran } from "@/lib/offline-quran-search"
+import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
 import {
   isQuranSearchQueryReady,
   isStructuralQuranSearch,
@@ -302,8 +303,7 @@ export function QuranNavigation({
               seen.add(key)
               return true
             })
-            .sort((first, second) => first.page - second.page || first.verseKey.localeCompare(second.verseKey))
-          setResults(merged)
+          setResults(rankQuranSearchResults(merged, normalized))
         } catch (searchFailure) {
           try {
             const offline = await searchOfflineQuran(normalized)

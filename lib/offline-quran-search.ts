@@ -1,10 +1,14 @@
 import { OFFLINE_PAGE_CACHE } from "@/lib/offline-audio"
+import {
+  normalizeQuranSearchRankingText,
+  rankQuranSearchResults,
+} from "@/lib/quran-search-ranking"
 import { sanitizeQuranSearchText } from "@/lib/quran-search-text"
 
 const SEARCH_DB_NAME = "wird-offline-quran-search-v1"
 const SEARCH_STORE = "index"
 const SEARCH_INDEX_KEY = "verses"
-const SEARCH_INDEX_VERSION = 3
+const SEARCH_INDEX_VERSION = 4
 const OFFLINE_RECITER = 6
 
 type CachedVerse = {
@@ -41,22 +45,6 @@ type CachedPageResource = {
   page: number
   request: Request
   priority: number
-}
-
-function normalizeArabic(value: string) {
-  return value
-    .normalize("NFKD")
-    .replace(/\u0670/g, "ا")
-    .replace(/[\u064B-\u065F\u06D6-\u06ED]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ـ/g, "")
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF|¦]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
 }
 
 function openSearchDatabase() {
@@ -140,7 +128,7 @@ async function buildIndexFromCache(cached: Awaited<ReturnType<typeof collectCach
         ayah: verse.verseNumber,
         text,
         page: verse.pageNumber,
-        normalizedText: normalizeArabic(text),
+        normalizedText: normalizeQuranSearchRankingText(text),
       })
     }
   }
@@ -174,7 +162,7 @@ export async function getOfflineQuranIndex() {
 
 export async function searchOfflineQuran(query: string) {
   if (typeof window === "undefined") return { results: [] as OfflineQuranSearchResult[], totalResults: 0 }
-  const normalizedQuery = normalizeArabic(query)
+  const normalizedQuery = normalizeQuranSearchRankingText(query)
   if (normalizedQuery.length < 2) return { results: [] as OfflineQuranSearchResult[], totalResults: 0 }
   const index = await getOfflineQuranIndex()
   const directVerse = query.match(/^(\d{1,3})\s*[:：]\s*(\d{1,3})$/)
@@ -194,8 +182,9 @@ export async function searchOfflineQuran(query: string) {
     }
   }
   const matches = index.filter((entry) => entry.normalizedText.includes(normalizedQuery))
+  const rankedMatches = rankQuranSearchResults(matches, query)
   return {
-    results: matches.slice(0, 20).map(({ normalizedText: _normalizedText, ...entry }) => entry),
+    results: rankedMatches.slice(0, 20).map(({ normalizedText: _normalizedText, ...entry }) => entry),
     totalResults: matches.length,
   }
 }
