@@ -2,6 +2,7 @@
 
 import Image from "next/image"
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type TouchEvent, type WheelEvent as ReactWheelEvent } from "react"
+import { flushSync } from "react-dom"
 import { getSurahMeta, type Surah } from "quran-meta/hafs"
 import {
   Bookmark,
@@ -159,9 +160,13 @@ import {
 } from "@/components/quran-page"
 import { loadLastReading, saveLastReading } from "@/lib/last-reading"
 import { saveRecentReadingLocation } from "@/lib/recent-reading"
+import {
+  readKhatmaPlan,
+  saveKhatmaPlan,
+} from "@/lib/khatma-plan"
 import { addLearningPlanProgress, type LearningPlanType } from "@/lib/learning-plan"
 import { OFFLINE_PAGE_CACHE } from "@/lib/offline-audio"
-import { downloadOfflineQuran, loadOfflineQuranPage } from "@/lib/offline-quran"
+import { downloadOfflineQuran, loadOfflineQuranPage, loadOfflineQuranReadingPage } from "@/lib/offline-quran"
 import { loadQuranNavigation } from "@/lib/offline-quran-navigation"
 import { searchOfflineQuran } from "@/lib/offline-quran-search"
 import {
@@ -1005,6 +1010,7 @@ export function QuranPlayer() {
   const activeSessionIdRef = useRef<string | null>(null)
   const pendingResumeSessionIdRef = useRef<string | null>(null)
   const pendingLearningPlanTypeRef = useRef<LearningPlanType | undefined>(undefined)
+  const activeKhatmaRangeRef = useRef<{ startPage: number; pageCount: number } | null>(null)
   const readingStartedAtRef = useRef<number | null>(null)
   const mushafStageRef = useRef<HTMLDivElement>(null)
   const headerShellRef = useRef<HTMLElement>(null)
@@ -1031,8 +1037,6 @@ export function QuranPlayer() {
   const largeReadingGenerationRef = useRef(0)
   const largeReadingLoadingRef = useRef(false)
   const largeReadingRetryAtRef = useRef(0)
-  const largeReadingAppendBlockedRef = useRef(false)
-  const continuousOfflineNoticeShownRef = useRef(false)
   const continuousPageScrollStartedRef = useRef(false)
   const continuousScrollPositionRef = useRef<number | null>(null)
   const continuousScrollPausedAtRef = useRef<number | null>(null)
@@ -1041,6 +1045,8 @@ export function QuranPlayer() {
   const continuousScrollModeRef = useRef<"free" | "recitation">("free")
   const continuousRecitationManualVerseRef = useRef<string | null>(null)
   const continuousRecitationScrollFrameRef = useRef<number | null>(null)
+  const currentPageRef = useRef(1)
+  const continuousVisiblePageRef = useRef<number | null>(null)
   const currentVerseKeyRef = useRef<string | null>(null)
   const continuousScrollInteractionPauseRef = useRef(false)
   const continuousScrollResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1469,8 +1475,7 @@ export function QuranPlayer() {
       setOfflineTafsirStatus((event as CustomEvent<OfflineTafsirStatus>).detail)
     }
     const handleOnline = () => {
-      largeReadingAppendBlockedRef.current = false
-      continuousOfflineNoticeShownRef.current = false
+      largeReadingRetryAtRef.current = 0
       setNetworkOnline(true)
     }
     const handleOffline = () => setNetworkOnline(false)
@@ -1487,11 +1492,59 @@ export function QuranPlayer() {
   }, [])
 
   useEffect(() => {
+    currentPageRef.current = currentPage
+    continuousVisiblePageRef.current = continuousVisiblePage
     continuousAutoScrollRef.current = continuousAutoScroll
     continuousScrollPausedRef.current = continuousScrollPaused
     continuousScrollModeRef.current = continuousScrollMode
     currentVerseKeyRef.current = currentVerse?.verseKey ?? null
-  }, [continuousAutoScroll, continuousScrollMode, continuousScrollPaused, currentVerse?.verseKey])
+  }, [continuousAutoScroll, continuousScrollMode, continuousScrollPaused, continuousVisiblePage, currentPage, currentVerse?.verseKey])
+
+  const getVisibleReadingPage = useCallback(() => {
+    const container = largeReadingScrollRef.current
+    const visibleLocation = container?.isConnected ? getVisibleContinuousLocation(container) : undefined
+    return visibleLocation?.page ?? continuousVisiblePageRef.current ?? currentPageRef.current
+  }, [])
+
+  const persistActiveKhatmaProgress = useCallback((visiblePage = getVisibleReadingPage()) => {
+    const range = activeKhatmaRangeRef.current
+    if (!range || !Number.isInteger(visiblePage) || visiblePage < range.startPage) return
+    const rangeEnd = range.startPage + range.pageCount - 1
+    const completedPage = Math.min(visiblePage, rangeEnd)
+    const plan = readKhatmaPlan()
+    if (!plan) return
+    const nextCompletedPage = Math.max(plan.completedPage, completedPage)
+    if (
+      nextCompletedPage === plan.completedPage &&
+      plan.startPage === range.startPage &&
+      plan.pageCount === range.pageCount
+    ) return
+    saveKhatmaPlan({
+      ...plan,
+      completedPage: nextCompletedPage,
+      startPage: range.startPage,
+      pageCount: range.pageCount,
+    })
+  }, [getVisibleReadingPage])
+
+  useEffect(() => {
+    const persist = () => persistActiveKhatmaProgress()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") persist()
+    }
+    const interval = window.setInterval(persist, 15_000)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    window.addEventListener("wird-before-app-update", persist)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("wird-before-app-update", persist)
+    }
+  }, [persistActiveKhatmaProgress])
+
+  useEffect(() => {
+    if (dashboardOpen) persistActiveKhatmaProgress()
+  }, [dashboardOpen, persistActiveKhatmaProgress])
 
   useEffect(() => {
     if (!continuousAutoScroll || !isPlaying || !hasVerseSynchronization) return
@@ -2524,6 +2577,7 @@ export function QuranPlayer() {
 
   useEffect(() => {
     if (!continuousReadingLayout) {
+      persistActiveKhatmaProgress()
       largeReadingGenerationRef.current += 1
       setLargeReadingPages([])
       largeReadingPagesRef.current = []
@@ -2535,7 +2589,7 @@ export function QuranPlayer() {
     setViewMode("text")
     setSpreadMode("single")
     if (readingMode === "large") setWideReading(false)
-  }, [continuousReadingLayout, readingMode])
+  }, [continuousReadingLayout, persistActiveKhatmaProgress, readingMode])
 
   const rememberLoadedPage = useCallback((data: LoadedPage) => {
     if (data.reciter === undefined) return
@@ -2607,10 +2661,10 @@ export function QuranPlayer() {
     }
 
     const request = (async () => {
-      const offlinePage = await loadOfflineQuranPage<PageResponse>(page, targetReciter)
+      const offlinePage = await loadOfflineQuranReadingPage<PageResponse>(page)
       let data: PageResponse
       if (offlinePage) {
-        data = offlinePage.data
+        data = offlinePage
       } else {
         const response = await fetch(`/api/quran?page=${page}&content=reading`)
         const responseData = await response.json().catch(() => null) as PageResponse | null
@@ -2661,7 +2715,7 @@ export function QuranPlayer() {
     const generation = largeReadingGenerationRef.current
     largeReadingLoadingRef.current = true
     try {
-      const data = await requestLoadedPage(lastPage + 1, reciter)
+      const data = await requestReadingPage(lastPage + 1, reciter)
       await preloadQcf4PageFonts(data.qcfPage).catch(() => undefined)
       if (generation !== largeReadingGenerationRef.current) return false
       const currentPages = largeReadingPagesRef.current
@@ -2671,17 +2725,14 @@ export function QuranPlayer() {
       largeReadingPagesRef.current = nextPages
       setLargeReadingPages(nextPages)
       largeReadingRetryAtRef.current = 0
-      largeReadingAppendBlockedRef.current = false
-      continuousOfflineNoticeShownRef.current = false
       return true
     } catch {
       largeReadingRetryAtRef.current = Date.now() + 1500
-      largeReadingAppendBlockedRef.current = true
       return false
     } finally {
       largeReadingLoadingRef.current = false
     }
-  }, [reciter, requestLoadedPage])
+  }, [reciter, requestReadingPage])
 
   const applyLoadedPage = useCallback((data: LoadedPage) => {
     const pendingScope = pendingPlaybackScopeRef.current
@@ -2797,7 +2848,7 @@ export function QuranPlayer() {
         const nextPage = loadedThrough === undefined ? currentPage : loadedThrough + 1
         if (nextPage > targetPage) return
         try {
-          const data = await requestLoadedPage(nextPage, reciter)
+          const data = await requestReadingPage(nextPage, reciter)
           await preloadQcf4PageFonts(data.qcfPage).catch(() => undefined)
           if (cancelled || generation !== largeReadingGenerationRef.current) return
           const latestPages = largeReadingPagesRef.current
@@ -2812,28 +2863,32 @@ export function QuranPlayer() {
           largeReadingRetryAtRef.current = 0
         } catch {
           largeReadingRetryAtRef.current = Date.now() + 1500
-          return
+          await new Promise((resolve) => window.setTimeout(resolve, 1500))
         }
       }
     }
     void loadPages()
     return () => { cancelled = true }
-  }, [continuousReadingLayout, currentPage, reciter, requestLoadedPage, reloadKey, viewMode])
+  }, [continuousReadingLayout, currentPage, reciter, requestReadingPage, reloadKey, viewMode])
 
   useEffect(() => {
     if (!continuousReadingLayout || viewMode !== "text") return
     const container = largeReadingScrollRef.current
     if (!container) return
     let frame = 0
+    let active = true
     const updateCurrentPageFromScroll = () => {
       frame = 0
+      if (!active || largeReadingScrollRef.current !== container || !container.isConnected) return
       const visibleLocation = getVisibleContinuousLocation(container)
       if (visibleLocation) {
+        continuousVisiblePageRef.current = visibleLocation.page
         setContinuousVisiblePage((page) => page === visibleLocation.page ? page : visibleLocation.page)
         setContinuousVisibleVerseKey((verseKey) => (
           verseKey === visibleLocation.verseKey ? verseKey : visibleLocation.verseKey ?? null
         ))
-        if (continuousScrollModeRef.current !== "recitation" && visibleLocation.page !== currentPage) {
+        if (continuousScrollModeRef.current !== "recitation" && visibleLocation.page !== currentPageRef.current) {
+          currentPageRef.current = visibleLocation.page
           setCurrentPage(visibleLocation.page)
         }
       }
@@ -2848,10 +2903,11 @@ export function QuranPlayer() {
     container.addEventListener("scroll", handleScroll, { passive: true })
     updateCurrentPageFromScroll()
     return () => {
+      active = false
       container.removeEventListener("scroll", handleScroll)
       if (frame) window.cancelAnimationFrame(frame)
     }
-  }, [appendNextContinuousPage, continuousReadingLayout, currentPage, largeReadingPages, viewMode])
+  }, [appendNextContinuousPage, continuousReadingLayout, largeReadingPages, viewMode])
 
   useEffect(() => {
     if (!continuousPageAutoScroll) {
@@ -2880,6 +2936,7 @@ export function QuranPlayer() {
       const remaining = Math.max(0, Math.ceil((continuousScrollStopAt - Date.now()) / 1000))
       setContinuousScrollTimerRemaining(remaining)
       if (remaining <= 0) {
+        persistActiveKhatmaProgress()
         setContinuousAutoScroll(false)
         setContinuousScrollStopAt(null)
         toast.success("انتهى مؤقت التمرير التلقائي")
@@ -2888,7 +2945,7 @@ export function QuranPlayer() {
     updateRemaining()
     const timer = window.setInterval(updateRemaining, 1000)
     return () => window.clearInterval(timer)
-  }, [continuousAutoScroll, continuousScrollPaused, continuousScrollStopAt])
+  }, [continuousAutoScroll, continuousScrollPaused, continuousScrollStopAt, persistActiveKhatmaProgress])
 
   useEffect(() => {
     if (
@@ -3004,21 +3061,8 @@ export function QuranPlayer() {
       const remainingDistance = container.scrollHeight - container.scrollTop - container.clientHeight
       if (remainingDistance < container.clientHeight * 2) void appendNextContinuousPage()
       const reachedEnd = remainingDistance <= 1
-      if (reachedEnd && largeReadingAppendBlockedRef.current) {
-        continuousScrollPositionRef.current = null
-        continuousScrollPausedAtRef.current = Date.now()
-        continuousScrollPausedRef.current = true
-        content.style.removeProperty("transform")
-        setContinuousScrollPaused(true)
-        if (!continuousOfflineNoticeShownRef.current) {
-          continuousOfflineNoticeShownRef.current = true
-          toast.info("توقف التمرير مؤقتًا عند آخر صفحة محفوظة. نزّل الصفحات التالية عند توفر الإنترنت.", {
-            duration: 6_000,
-          })
-        }
-        return
-      }
       if (reachedEnd && largeReadingPagesRef.current.at(-1)?.page === MAX_PAGE) {
+        persistActiveKhatmaProgress()
         setContinuousAutoScroll(false)
         setContinuousScrollStopAt(null)
         setContinuousScrollTimerRemaining(null)
@@ -3032,7 +3076,7 @@ export function QuranPlayer() {
       continuousScrollPositionRef.current = null
       content.style.removeProperty("transform")
     }
-  }, [appendNextContinuousPage, continuousAutoScroll, continuousReadingLayout, continuousScrollMode, continuousScrollPaused, continuousScrollSpeed, viewMode])
+  }, [appendNextContinuousPage, continuousAutoScroll, continuousReadingLayout, continuousScrollMode, continuousScrollPaused, continuousScrollSpeed, persistActiveKhatmaProgress, viewMode])
 
   useEffect(() => {
     if (!continuousReadingLayout || viewMode !== "text") return
@@ -3736,8 +3780,6 @@ export function QuranPlayer() {
       setSpreadMode("single")
     }
     const mode = isPlaying && hasVerseSynchronization ? "recitation" : "free"
-    largeReadingAppendBlockedRef.current = false
-    continuousOfflineNoticeShownRef.current = false
     continuousScrollPausedAtRef.current = null
     continuousScrollPausedRef.current = false
     continuousScrollModeRef.current = mode
@@ -3755,7 +3797,10 @@ export function QuranPlayer() {
     continuousScrollPositionRef.current = null
     const scrollContainer = largeReadingScrollRef.current
     const visibleLocation = scrollContainer ? getVisibleContinuousLocation(scrollContainer) : undefined
-    if (visibleLocation && visibleLocation.page !== currentPage) setCurrentPage(visibleLocation.page)
+    const visiblePage = visibleLocation?.page ?? continuousVisiblePageRef.current ?? currentPageRef.current
+    persistActiveKhatmaProgress(visiblePage)
+    currentPageRef.current = visiblePage
+    flushSync(() => setCurrentPage(visiblePage))
     if (continuousScrollResumeTimerRef.current) window.clearTimeout(continuousScrollResumeTimerRef.current)
     continuousScrollResumeTimerRef.current = null
     continuousScrollInteractionPauseRef.current = false
@@ -3764,12 +3809,11 @@ export function QuranPlayer() {
       window.cancelAnimationFrame(continuousRecitationScrollFrameRef.current)
       continuousRecitationScrollFrameRef.current = null
     }
-    largeReadingAppendBlockedRef.current = false
-    continuousOfflineNoticeShownRef.current = false
     continuousScrollPausedAtRef.current = null
     continuousScrollPausedRef.current = false
     continuousScrollModeRef.current = "free"
     continuousAutoScrollRef.current = false
+    continuousVisiblePageRef.current = null
     setContinuousVisiblePage(null)
     setContinuousVisibleVerseKey(null)
     setContinuousScrollMode("free")
@@ -3789,8 +3833,6 @@ export function QuranPlayer() {
   }
 
   const resumeContinuousScroll = () => {
-    largeReadingAppendBlockedRef.current = false
-    continuousOfflineNoticeShownRef.current = false
     const pausedAt = continuousScrollPausedAtRef.current
     if (pausedAt !== null) {
       const pausedDuration = Date.now() - pausedAt
@@ -4323,6 +4365,16 @@ export function QuranPlayer() {
     )
   }
 
+  const openKhatmaReadingRange = (startPage: number, endPage: number) => {
+    const start = Math.min(Math.max(startPage, 1), MAX_PAGE)
+    const end = Math.min(Math.max(endPage, start), MAX_PAGE)
+    const range = { startPage: start, pageCount: end - start + 1 }
+    activeKhatmaRangeRef.current = range
+    const plan = readKhatmaPlan()
+    if (plan) saveKhatmaPlan({ ...plan, ...range })
+    applyNavigationRange({ startPage: start, endPage: end })
+  }
+
   const switchFullscreenOrientation = async (target?: PhysicalOrientation) => {
     const currentOrientation = acceptedOrientationRef.current
     const nextPhysical = target ?? (currentOrientation === "landscape" ? "portrait" : "landscape")
@@ -4457,8 +4509,8 @@ export function QuranPlayer() {
     if (mode === "large") {
       setWideReading(false)
       setSpreadMode("single")
-    } else {
-      setContinuousAutoScroll(false)
+    } else if (continuousAutoScroll) {
+      stopContinuousAutoScroll()
     }
   }
 
@@ -5928,6 +5980,7 @@ export function QuranPlayer() {
   }
 
   const openDashboardView = () => {
+    persistActiveKhatmaProgress()
     activeSessionIdRef.current = null
     pendingResumeSessionIdRef.current = null
     setBoundedSessionActive(false)
@@ -8016,7 +8069,7 @@ export function QuranPlayer() {
             open={khatmaOpen}
             onOpenChange={setKhatmaOpen}
             currentPage={currentPage}
-            onOpenRange={(startPage, endPage) => applyNavigationRange({ startPage, endPage })}
+            onOpenRange={openKhatmaReadingRange}
           />
         )}
 

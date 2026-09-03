@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { BoundedNumberInput } from "@/components/bounded-number-input"
 import { QuranSessionRangePicker, type NavigationRange } from "@/components/quran-navigation"
 import {
   AlertDialog,
@@ -444,13 +445,12 @@ export function LearningPlanDialog({ open, onOpenChange, currentPage, onOpenRang
                 ) : (
                   <div className="space-y-2">
                     <Label htmlFor="learning-plan-daily-pages">صفحات كل يوم نشاط</Label>
-                    <Input
+                    <BoundedNumberInput
                       id="learning-plan-daily-pages"
-                      type="number"
                       min={1}
                       max={100}
                       value={dailyPages}
-                      onChange={(event) => setDailyPages(Number(event.target.value))}
+                      onValueChange={setDailyPages}
                     />
                   </div>
                 )}
@@ -486,13 +486,12 @@ export function LearningPlanDialog({ open, onOpenChange, currentPage, onOpenRang
                   {reviewEnabled && (
                     <div className="space-y-2">
                       <Label htmlFor="learning-plan-review-pages">صفحات كل مراجعة</Label>
-                      <Input
+                      <BoundedNumberInput
                         id="learning-plan-review-pages"
-                        type="number"
                         min={1}
                         max={30}
                         value={reviewPages}
-                        onChange={(event) => setReviewPages(Number(event.target.value))}
+                        onValueChange={setReviewPages}
                       />
                     </div>
                   )}

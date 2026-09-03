@@ -186,6 +186,20 @@ export async function loadOfflineQuranPage<T>(page: number, reciter: number, all
   return readingPayload ? { data: readingPayload as T, reciter: OFFLINE_QURAN_RECITER } : null
 }
 
+export async function loadOfflineQuranReadingPage<T>(page: number) {
+  if (
+    typeof window === "undefined" ||
+    !("caches" in window) ||
+    !Number.isInteger(page) ||
+    page < 1 ||
+    page > OFFLINE_QURAN_PAGE_COUNT
+  ) return null
+
+  const response = await window.caches.match(getOfflineQuranPageUrl(page))
+  const payload = await readValidQuranPage(response, page)
+  return payload ? payload as T : null
+}
+
 function emitStatus(status: OfflineQuranStatus) {
   if (typeof window === "undefined") return
   window.dispatchEvent(new CustomEvent<OfflineQuranStatus>(OFFLINE_QURAN_PROGRESS_EVENT, {

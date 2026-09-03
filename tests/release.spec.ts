@@ -741,6 +741,98 @@ test("يثبت الثيم المختار قبل تشغيل الواجهة", asyn
   await expect(page.getByRole("radio", { name: "بيج هادئ" })).toBeChecked()
 })
 
+test("يسمح بمسح مدخلات أرقام الخطط ثم يثبت القيم الجديدة", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.removeItem("wird-khatma-plan-v1")
+    window.localStorage.removeItem("wird-learning-plan-v1")
+  })
+  await openMushaf(page)
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.locator("button").filter({ hasText: "إنشاء مسار ختمة" }).click()
+
+  const duration = page.getByLabel("المدة بالأيام")
+  await duration.fill("")
+  await expect(duration).toHaveValue("")
+  await duration.fill("2")
+  await duration.press("Enter")
+  await expect(duration).toHaveValue("2")
+  await expect(duration).toHaveAttribute("inputmode", "numeric")
+
+  await page.getByText("مقدار يومي", { exact: true }).click()
+  const khatmaPages = page.getByLabel("عدد الصفحات يوميًا")
+  await khatmaPages.fill("")
+  await expect(khatmaPages).toHaveValue("")
+  await khatmaPages.fill("3")
+  await khatmaPages.blur()
+  await expect(khatmaPages).toHaveValue("3")
+  await expect(khatmaPages).toHaveAttribute("inputmode", "numeric")
+  await page.keyboard.press("Escape")
+
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: /^خطط الحفظ والمراجعة/ }).click()
+  await page.getByText("مقدار يومي", { exact: true }).click()
+  const activityPages = page.getByLabel("صفحات كل يوم نشاط")
+  await activityPages.fill("")
+  await expect(activityPages).toHaveValue("")
+  await activityPages.fill("2")
+  await activityPages.press("Enter")
+  await expect(activityPages).toHaveValue("2")
+
+  const reviewPages = page.getByLabel("صفحات كل مراجعة")
+  await reviewPages.fill("")
+  await expect(reviewPages).toHaveValue("")
+  await reviewPages.fill("1")
+  await reviewPages.blur()
+  await expect(reviewPages).toHaveValue("1")
+  await expect(activityPages).toHaveAttribute("inputmode", "numeric")
+  await expect(reviewPages).toHaveAttribute("inputmode", "numeric")
+})
+
+test("يحفظ آخر صفحة مرئية من مقرر الختمة مع بقاء نطاقه", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = new Date()
+    const date = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-")
+    window.localStorage.setItem("wird-khatma-plan-v1", JSON.stringify({
+      version: 1,
+      method: "daily",
+      durationDays: 30,
+      dailyPages: 3,
+      startDate: date,
+      completedPage: 4,
+      reminderEnabled: false,
+      reminderTime: "20:00",
+      lastOpenedDate: date,
+    }))
+  })
+  await openMushaf(page)
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: /^الختمة/ }).first().click()
+  await expect(page.getByText("صفحة 5 إلى 7")).toBeVisible()
+  await page.getByRole("button", { name: "افتح مقرر اليوم" }).click()
+  await expect(page.getByLabel("صفحة 5 من المصحف الشريف")).toBeVisible()
+
+  await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()
+  const scrollContainer = page.locator("[data-quran-scroll-container]")
+  await expect(page.locator('[data-large-reading-page="6"]')).toBeAttached()
+  await scrollContainer.evaluate((element) => {
+    const target = element.querySelector<HTMLElement>('[data-large-reading-page="6"]')
+    if (!target) throw new Error("Page 6 was not rendered")
+    element.scrollTop = target.offsetTop
+  })
+  await expect(page.locator("[data-continuous-reader-bar]")).toHaveAttribute("aria-label", /الصفحة 6/)
+  await page.getByRole("button", { name: "الخروج من التمرير التلقائي" }).click()
+  await expect(page.getByLabel("صفحة 6 من المصحف الشريف")).toBeVisible()
+
+  const plan = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
+  expect(plan.completedPage).toBe(6)
+  expect(plan.startPage).toBe(5)
+  expect(plan.pageCount).toBe(3)
+})
+
 test("يوضح أن تذكير الختمة يعمل داخل التطبيق", async ({ page }) => {
   await openMushaf(page)
   await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
@@ -886,7 +978,46 @@ test("يعيد ملف واجهة Next المحفوظ عند اختلاف معا�
   }
 })
 
-test("يوقف التمرير عند آخر صفحة محفوظة دون إسقاط الواجهة", async ({ page, context }) => {
+test("يعيد طلب صفحة القراءة المستمرة بعد فشل مؤقت", async ({ page }) => {
+  let readingAttempts = 0
+  const fullPageRequests: string[] = []
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wird-last-reading-v1", JSON.stringify({
+      page: 120,
+      positionMs: 0,
+      reciter: 6,
+      viewMode: "text",
+      readingMode: "page",
+      updatedAt: Date.now(),
+    }))
+  })
+  await page.route("**/api/quran**", async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get("page") !== "122") {
+      await route.continue()
+      return
+    }
+    if (url.searchParams.get("content") !== "reading") {
+      fullPageRequests.push(url.href)
+      await route.continue()
+      return
+    }
+    readingAttempts += 1
+    if (readingAttempts === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporary" }) })
+      return
+    }
+    await route.continue()
+  })
+
+  await openMushaf(page)
+  await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()
+  await expect(page.locator('[data-large-reading-page="122"]')).toBeAttached()
+  expect(readingAttempts).toBeGreaterThanOrEqual(2)
+  expect(fullPageRequests).toEqual([])
+})
+
+test("يبقي التمرير مفعّلًا دون اتصال ويستأنف التحميل عند عودته", async ({ page, context }) => {
   test.setTimeout(120_000)
   const pageErrors: string[] = []
   const failedScripts: string[] = []
@@ -931,15 +1062,17 @@ test("يوقف التمرير عند آخر صفحة محفوظة دون إسق�
     await expect(scrollContainer).toBeVisible()
     await expect(page.locator("html")).toHaveAttribute("data-wird-auto-scroll", "true")
 
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      await scrollContainer.evaluate((element) => { element.scrollTop = element.scrollHeight })
-      if (await page.getByRole("button", { name: "استئناف التمرير التلقائي" }).count()) break
-      await page.waitForTimeout(500)
-    }
-
-    await expect(page.getByRole("button", { name: "استئناف التمرير التلقائي" })).toBeVisible()
-    await expect(page.getByText("توقف التمرير مؤقتًا عند آخر صفحة محفوظة. نزّل الصفحات التالية عند توفر الإنترنت.")).toBeVisible()
+    await scrollContainer.evaluate((element) => { element.scrollTop = element.scrollHeight })
+    await page.waitForTimeout(1800)
+    await expect(page.getByRole("button", { name: "الخروج من التمرير التلقائي" })).toBeVisible()
+    await expect(page.locator("html")).toHaveAttribute("data-wird-auto-scroll", "true")
+    await expect(page.getByText("لا يوجد اتصال بالإنترنت")).toHaveCount(0)
+    await expect(page.getByText(/غير متصل بالإنترنت، وتلاوة القارئ/)).toHaveCount(0)
     await expect(page.locator('[data-large-reading-page="120"]')).toBeVisible()
+
+    await context.setOffline(false)
+    await expect(page.locator('[data-large-reading-page="122"]')).toBeAttached()
+    await expect(page.getByRole("button", { name: "الخروج من التمرير التلقائي" })).toBeVisible()
     await expect(page.getByText("تعذر إكمال هذه الشاشة")).toHaveCount(0)
     await expect(page.getByText("Something went wrong")).toHaveCount(0)
     await expect(page.getByText("نسخة جديدة جاهزة")).toHaveCount(0)

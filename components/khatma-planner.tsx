@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { BoundedNumberInput } from "@/components/bounded-number-input"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,24 +38,14 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-
-export const KHATMA_STORAGE_KEY = "wird-khatma-plan-v1"
-const TOTAL_PAGES = 604
-
-type KhatmaMethod = "duration" | "daily"
-
-export type KhatmaPlan = {
-  version: 1
-  method: KhatmaMethod
-  durationDays: number
-  dailyPages: number
-  startDate: string
-  completedPage: number
-  reminderEnabled: boolean
-  reminderTime: string
-  lastOpenedDate?: string
-  lastNotifiedDate?: string
-}
+import {
+  KHATMA_CHANGE_EVENT,
+  KHATMA_TOTAL_PAGES as TOTAL_PAGES,
+  readKhatmaPlan as readPlan,
+  saveKhatmaPlan as savePlan,
+  type KhatmaMethod,
+  type KhatmaPlan,
+} from "@/lib/khatma-plan"
 
 type KhatmaPlannerProps = {
   open: boolean
@@ -107,33 +98,6 @@ function totalPlanDays(plan: KhatmaPlan) {
     : Math.ceil(TOTAL_PAGES / plan.dailyPages)
 }
 
-function savePlan(plan: KhatmaPlan | null) {
-  if (plan) window.localStorage.setItem(KHATMA_STORAGE_KEY, JSON.stringify(plan))
-  else window.localStorage.removeItem(KHATMA_STORAGE_KEY)
-}
-
-function readPlan() {
-  try {
-    const plan = JSON.parse(window.localStorage.getItem(KHATMA_STORAGE_KEY) ?? "null") as KhatmaPlan | null
-    if (
-      !plan ||
-      plan.version !== 1 ||
-      !["duration", "daily"].includes(plan.method) ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(plan.startDate)
-    ) return null
-    return {
-      ...plan,
-      durationDays: clampInteger(plan.durationDays, 1, 365),
-      dailyPages: clampInteger(plan.dailyPages, 1, 100),
-      completedPage: clampInteger(plan.completedPage, 0, TOTAL_PAGES),
-      reminderTime: /^\d{2}:\d{2}$/.test(plan.reminderTime) ? plan.reminderTime : "20:00",
-    }
-  } catch {
-    window.localStorage.removeItem(KHATMA_STORAGE_KEY)
-    return null
-  }
-}
-
 export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: KhatmaPlannerProps) {
   const [loaded, setLoaded] = useState(false)
   const [todayKey, setTodayKey] = useState("1970-01-01")
@@ -148,9 +112,12 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
   const [extraPages, setExtraPages] = useState(0)
 
   useEffect(() => {
+    const refreshPlan = () => setPlan(readPlan())
     setTodayKey(localDateKey(new Date()))
-    setPlan(readPlan())
+    refreshPlan()
     setLoaded(true)
+    window.addEventListener(KHATMA_CHANGE_EVENT, refreshPlan)
+    return () => window.removeEventListener(KHATMA_CHANGE_EVENT, refreshPlan)
   }, [])
 
   useEffect(() => {
@@ -318,6 +285,13 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
   }
 
   const openTodayReading = () => {
+    if (!plan) return
+    const nextPlan = {
+      ...plan,
+      startPage: todayStart,
+      pageCount: todayEnd - todayStart + 1,
+    }
+    persistPlan(nextPlan)
     onOpenRange(todayStart, todayEnd)
     onOpenChange(false)
   }
@@ -597,13 +571,12 @@ function SetupForm({
       {method === "duration" ? (
         <div className="space-y-2">
           <Label htmlFor="khatma-days">المدة بالأيام</Label>
-          <Input
+          <BoundedNumberInput
             id="khatma-days"
-            type="number"
             min={1}
             max={365}
             value={durationDays}
-            onChange={(event) => onDurationDaysChange(clampInteger(Number(event.target.value), 1, 365))}
+            onValueChange={onDurationDaysChange}
             className="text-center"
           />
           <div className="grid grid-cols-4 gap-1">
@@ -617,13 +590,12 @@ function SetupForm({
       ) : (
         <div className="space-y-2">
           <Label htmlFor="khatma-pages">عدد الصفحات يوميًا</Label>
-          <Input
+          <BoundedNumberInput
             id="khatma-pages"
-            type="number"
             min={1}
             max={100}
             value={dailyPages}
-            onChange={(event) => onDailyPagesChange(clampInteger(Number(event.target.value), 1, 100))}
+            onValueChange={onDailyPagesChange}
             className="text-center"
           />
         </div>

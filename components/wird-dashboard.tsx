@@ -22,7 +22,6 @@ import {
   Trash2,
 } from "lucide-react"
 
-import { KHATMA_STORAGE_KEY, type KhatmaPlan } from "@/components/khatma-planner"
 import { useInterfaceLanguage } from "@/components/interface-language-provider"
 import type { LearningPlanRange } from "@/components/learning-plan"
 import {
@@ -52,6 +51,12 @@ import {
   WIRD_BACKUP_CHANGE_EVENT,
 } from "@/lib/wird-backup"
 import { HIGHLIGHT_CATEGORY_LABELS } from "@/lib/wird-review"
+import {
+  KHATMA_CHANGE_EVENT,
+  KHATMA_STORAGE_KEY,
+  readKhatmaPlan,
+  type KhatmaPlan,
+} from "@/lib/khatma-plan"
 import {
   getLearningPlanStatus,
   LEARNING_PLAN_LABELS,
@@ -118,14 +123,6 @@ function getHighlightedWords(highlight: VerseHighlight) {
   return words.slice(start, end).join(" ")
 }
 
-function readKhatmaPlan() {
-  try {
-    return JSON.parse(window.localStorage.getItem(KHATMA_STORAGE_KEY) ?? "null") as KhatmaPlan | null
-  } catch {
-    return null
-  }
-}
-
 function formatBackupDate(value: string | null, language: "ar" | "en") {
   if (!value) return "لم تُنشأ"
   const date = new Date(value)
@@ -175,13 +172,20 @@ export function WirdDashboard({
       setLearningPlans(loadLearningPlans())
       setLastBackupAt(readLastWirdBackupAt(window.localStorage))
     }
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === KHATMA_STORAGE_KEY) refresh()
+    }
     refresh()
+    window.addEventListener("storage", handleStorage)
     window.addEventListener("wird-activity-changed", refresh)
     window.addEventListener("wird-learning-plan-changed", refresh)
+    window.addEventListener(KHATMA_CHANGE_EVENT, refresh)
     window.addEventListener(WIRD_BACKUP_CHANGE_EVENT, refresh)
     return () => {
+      window.removeEventListener("storage", handleStorage)
       window.removeEventListener("wird-activity-changed", refresh)
       window.removeEventListener("wird-learning-plan-changed", refresh)
+      window.removeEventListener(KHATMA_CHANGE_EVENT, refresh)
       window.removeEventListener(WIRD_BACKUP_CHANGE_EVENT, refresh)
     }
   }, [open])
