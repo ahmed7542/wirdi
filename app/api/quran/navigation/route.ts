@@ -250,8 +250,8 @@ export async function GET(request: Request) {
       }]
     })
     const seen = new Set(localResults.map((result) => result.verseKey))
-    const rankedVerseResults = rankQuranSearchResults(verseResults, query)
-    const results = [...localResults, ...rankedVerseResults.filter((result) => !seen.has(result.verseKey))].slice(0, 12)
+    const combinedResults = [...localResults, ...verseResults.filter((result) => !seen.has(result.verseKey))]
+    const results = rankQuranSearchResults(combinedResults, query).slice(0, 12)
     const totalResults = (data.search?.total_results ?? verseResults.length) + localResults.length
 
     return Response.json({ results, totalResults }, {

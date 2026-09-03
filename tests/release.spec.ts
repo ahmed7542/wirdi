@@ -107,21 +107,35 @@ test("يشغّل الواجهة الإنجليزية والبحث المحلي �
   }
 })
 
-test("يقدم تطابق عبارة الآية التام في API والبحث السريع", async ({ page, request }) => {
-  const query = "وهو العليم الحكيم"
-  const response = await request.get("/api/quran/navigation", { params: { q: query } })
-  expect(response.ok()).toBeTruthy()
-  const payload = await response.json() as { results: Array<{ verseKey: string }> }
-  expect(payload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
+test("يقدم تطابق عبارة الآية ويرتب التطابقات المتصلة بالمصحف", async ({ page, request }) => {
+  const exactPhraseQuery = "وهو العليم الحكيم"
+  const exactPhraseResponse = await request.get("/api/quran/navigation", { params: { q: exactPhraseQuery } })
+  expect(exactPhraseResponse.ok()).toBeTruthy()
+  const exactPhrasePayload = await exactPhraseResponse.json() as { results: Array<{ verseKey: string }> }
+  expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
 
   await openMushaf(page)
   await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
-  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').fill(query)
+  const searchInput = page.locator('input[aria-label="البحث السريع في القرآن"]:visible')
+  await searchInput.fill(exactPhraseQuery)
   await expect(page.locator('button[data-verse-key="66:2"]:visible')).toBeVisible()
   await expect(page.locator('button[data-verse-key="43:84"]:visible')).toBeVisible()
-  const visibleVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
+  const exactPhraseVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
     .evaluateAll((results) => results.map((result) => result.getAttribute("data-verse-key")))
-  expect(visibleVerseKeys.slice(0, 2)).toEqual(["66:2", "43:84"])
+  expect(exactPhraseVerseKeys.slice(0, 2)).toEqual(["66:2", "43:84"])
+
+  const connectedQuery = "ان الله غفور رحيم"
+  const expectedConnectedVerseKeys = ["2:173", "2:182", "2:199", "5:34"]
+  const connectedResponse = await request.get("/api/quran/navigation", { params: { q: connectedQuery } })
+  expect(connectedResponse.ok()).toBeTruthy()
+  const connectedPayload = await connectedResponse.json() as { results: Array<{ verseKey: string }> }
+  expect(connectedPayload.results.slice(0, 4).map((result) => result.verseKey)).toEqual(expectedConnectedVerseKeys)
+
+  await searchInput.fill(connectedQuery)
+  await expect(page.locator('button[data-verse-key="2:173"]:visible')).toBeVisible()
+  const connectedVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
+    .evaluateAll((results) => results.map((result) => result.getAttribute("data-verse-key")))
+  expect(connectedVerseKeys.slice(0, 4)).toEqual(expectedConnectedVerseKeys)
 })
 
 test("يعرض المصحف دون أخطاء أو تجاوز أفقي", async ({ page }) => {

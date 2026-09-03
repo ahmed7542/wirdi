@@ -44,7 +44,7 @@ export function rankQuranSearchResults<T extends QuranSearchRankable>(results: r
     }))
     .sort((first, second) => {
       if (first.rank !== second.rank) return first.rank - second.rank
-      if (first.rank === 0) {
+      if (first.rank < 2) {
         const firstVerse = verseOrder(first.result.verseKey)
         const secondVerse = verseOrder(second.result.verseKey)
         return firstVerse.chapter - secondVerse.chapter ||
