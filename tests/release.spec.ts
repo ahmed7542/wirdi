@@ -878,6 +878,69 @@ test("يحفظ آخر صفحة مرئية من مقرر الختمة مع بقا
   expect(planAfterRegularReading.pageCount).toBe(3)
 })
 
+test("يعرض تأخر مسار الختمة بالعربية والإنجليزية دون احتساب يوم البدء أو الختمة المكتملة", async ({ page }) => {
+  await page.addInitScript(() => {
+    const today = new Date()
+    const startedAt = new Date(today)
+    startedAt.setDate(startedAt.getDate() - 7)
+    const dateKey = (date: Date) => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-")
+    window.localStorage.setItem("wird-khatma-plan-v1", JSON.stringify({
+      version: 1,
+      method: "duration",
+      durationDays: 30,
+      dailyPages: 20,
+      startDate: dateKey(startedAt),
+      completedPage: 60,
+      reminderEnabled: false,
+      reminderTime: "20:00",
+      lastOpenedDate: dateKey(today),
+    }))
+  })
+
+  await openMushaf(page)
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: /^الختمة/ }).first().click()
+  const overdueStatus = page.locator('[data-khatma-overdue-days="4"]')
+  await expect(overdueStatus).toHaveText("متأخر 4 أيام عن المقرر")
+
+  await page.keyboard.press("Escape")
+  await page.evaluate(() => window.localStorage.setItem("wird-interface-language-v1", "en"))
+  await page.reload({ waitUntil: "networkidle" })
+  await expect(page.locator("html")).toHaveAttribute("lang", "en")
+  await page.getByRole("button", { name: "Open Wirdy dashboard" }).click()
+  await page.getByRole("button", { name: /^Khatmah/ }).first().click()
+  await expect(overdueStatus).toHaveText("4 days behind schedule")
+
+  await page.evaluate(() => {
+    const plan = JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null")
+    window.localStorage.setItem("wird-khatma-plan-v1", JSON.stringify({ ...plan, completedPage: 604 }))
+    window.dispatchEvent(new Event("wird-khatma-plan-changed"))
+  })
+  await expect(page.locator("[data-khatma-overdue-days]")).toHaveCount(0)
+
+  await page.evaluate(() => {
+    const now = new Date()
+    const today = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-")
+    const plan = JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null")
+    window.localStorage.setItem("wird-khatma-plan-v1", JSON.stringify({
+      ...plan,
+      startDate: today,
+      completedPage: 0,
+      lastOpenedDate: today,
+    }))
+    window.dispatchEvent(new Event("wird-khatma-plan-changed"))
+  })
+  await expect(page.locator("[data-khatma-overdue-days]")).toHaveCount(0)
+})
+
 test("يوضح أن تذكير الختمة يعمل داخل التطبيق", async ({ page }) => {
   await openMushaf(page)
   await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
@@ -1023,7 +1086,7 @@ test("يعيد ملف واجهة Next المحفوظ عند اختلاف معا�
   }
 })
 
-test("يعيد طلب صفحة القراءة المستمرة بعد فشل مؤقت", async ({ page }) => {
+test("يعيد طلب صفحة القراءة المستمرة بعد ثلاث إخفاقات وأخطاء التخزين المحلي", async ({ page }) => {
   let readingAttempts = 0
   const fullPageRequests: string[] = []
   await page.addInitScript(() => {
@@ -1035,6 +1098,20 @@ test("يعيد طلب صفحة القراءة المستمرة بعد فشل م�
       readingMode: "page",
       updatedAt: Date.now(),
     }))
+    window.sessionStorage.setItem("wird-test-reading-cache-attempts", "0")
+    const originalMatch = CacheStorage.prototype.match
+    CacheStorage.prototype.match = function(request, options) {
+      const requestUrl = typeof request === "string"
+        ? request
+        : request instanceof Request ? request.url : request.toString()
+      const url = new URL(requestUrl, window.location.origin)
+      if (url.searchParams.get("page") === "122" && url.searchParams.get("content") === "reading") {
+        const attempts = Number(window.sessionStorage.getItem("wird-test-reading-cache-attempts") ?? "0")
+        window.sessionStorage.setItem("wird-test-reading-cache-attempts", String(attempts + 1))
+        return Promise.reject(new Error("Cache Storage unavailable"))
+      }
+      return originalMatch.call(this, request, options)
+    }
   })
   await page.route("**/api/quran**", async (route) => {
     const url = new URL(route.request().url())
@@ -1048,7 +1125,7 @@ test("يعيد طلب صفحة القراءة المستمرة بعد فشل م�
       return
     }
     readingAttempts += 1
-    if (readingAttempts === 1) {
+    if (readingAttempts <= 3) {
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporary" }) })
       return
     }
@@ -1058,8 +1135,65 @@ test("يعيد طلب صفحة القراءة المستمرة بعد فشل م�
   await openMushaf(page)
   await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()
   await expect(page.locator('[data-large-reading-page="122"]')).toBeAttached()
-  expect(readingAttempts).toBeGreaterThanOrEqual(2)
+  expect(readingAttempts).toBe(4)
+  expect(await page.evaluate(() => Number(window.sessionStorage.getItem("wird-test-reading-cache-attempts")))).toBe(4)
+  await expect(page.getByText("تعذر تحميل نص الصفحة")).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "إعادة تحميل التلاوة" })).toHaveCount(0)
   expect(fullPageRequests).toEqual([])
+})
+
+test("يثبت هندسة صفحات التمرير في ملء الشاشة مع التباعد الواسع", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wird-last-reading-v1", JSON.stringify({
+      page: 120,
+      positionMs: 0,
+      reciter: 6,
+      viewMode: "text",
+      readingMode: "page",
+      updatedAt: Date.now(),
+    }))
+    window.localStorage.setItem("wird-player-settings", JSON.stringify({
+      viewMode: "text",
+      readingMode: "page",
+      lineSpacing: "spacious",
+      continuousScrollSpeed: 0.05,
+    }))
+  })
+
+  await openMushaf(page)
+  await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()
+  await expect(page.locator('[data-large-reading-page="121"]')).toBeAttached()
+  await page.getByRole("button", { name: "إيقاف التمرير التلقائي مؤقتًا" }).click()
+  await page.getByRole("button", { name: "عرض المصحف بملء الشاشة" }).first().click()
+  await expect(page.getByRole("button", { name: "العودة إلى واجهة المصحف" })).toBeVisible()
+
+  const geometry = await page.locator('[data-large-reading-page="120"], [data-large-reading-page="121"]')
+    .evaluateAll((wrappers) => wrappers.map((wrapper) => {
+      const pageElement = wrapper.querySelector<HTMLElement>("[data-quran-text-page]")!
+      const lineLayout = pageElement.querySelector<HTMLElement>("[data-qcf-line]")!.parentElement!
+      const pageBounds = pageElement.getBoundingClientRect()
+      const layoutStyle = getComputedStyle(lineLayout)
+      return {
+        className: pageElement.className,
+        width: pageBounds.width,
+        height: pageBounds.height,
+        lineCount: lineLayout.querySelectorAll("[data-qcf-line]").length,
+        display: layoutStyle.display,
+        justifyContent: layoutStyle.justifyContent,
+        paddingTop: layoutStyle.paddingTop,
+        paddingBottom: layoutStyle.paddingBottom,
+      }
+    }))
+
+  expect(geometry).toHaveLength(2)
+  expect(geometry[0].className).toBe(geometry[1].className)
+  expect(Math.abs(geometry[0].width - geometry[1].width)).toBeLessThanOrEqual(1)
+  expect(Math.abs(geometry[0].height - geometry[1].height)).toBeLessThanOrEqual(1)
+  expect(geometry.map((item) => item.lineCount)).toEqual([15, 15])
+  expect(geometry.map((item) => item.display)).toEqual(["flex", "flex"])
+  expect(geometry.map((item) => item.justifyContent)).toEqual(["space-between", "space-between"])
+  expect(geometry[0].paddingTop).toBe(geometry[1].paddingTop)
+  expect(geometry[0].paddingBottom).toBe(geometry[1].paddingBottom)
 })
 
 test("يبقي التمرير مفعّلًا دون اتصال ويستأنف التحميل عند عودته", async ({ page, context }) => {

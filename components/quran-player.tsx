@@ -554,6 +554,7 @@ const CONTINUOUS_SCROLL_MIN_SPEED = 0.05
 const CONTINUOUS_SCROLL_MAX_SPEED = 3
 const CONTINUOUS_SCROLL_SPEED_STEP = 0.05
 const CONTINUOUS_SCROLL_SPEED_PRESETS = [0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3] as const
+const READING_PAGE_RETRY_DELAYS_MS = [120, 300, 700] as const
 const SPEED_LONG_PRESS_MS = 480
 const PAGE_SWIPE_SETTLE_MS = 220
 const FULLSCREEN_ORIENTATION_CONTROL_MS = 4_500
@@ -2616,6 +2617,7 @@ export function QuranPlayer() {
       let data: PageResponse
       let sourceReciter = targetReciter
       const locallyCachedPage = await loadOfflineQuranPage<PageResponse>(page, targetReciter, false)
+        .catch(() => null)
       if (locallyCachedPage?.data.tracks.length) {
         data = locallyCachedPage.data
       } else {
@@ -2628,6 +2630,7 @@ export function QuranPlayer() {
           data = responseData
         } catch (error) {
           const offlinePage = await loadOfflineQuranPage<PageResponse>(page, targetReciter)
+            .catch(() => null)
           if (!offlinePage) throw error
           data = offlinePage.data
           sourceReciter = offlinePage.reciter
@@ -2662,18 +2665,29 @@ export function QuranPlayer() {
     }
 
     const request = (async () => {
-      const offlinePage = await loadOfflineQuranReadingPage<PageResponse>(page)
-      let data: PageResponse
-      if (offlinePage) {
-        data = offlinePage
-      } else {
-        const response = await fetch(`/api/quran?page=${page}&content=reading`)
-        const responseData = await response.json().catch(() => null) as PageResponse | null
-        if (!response.ok || !responseData?.verses?.length) {
-          throw new Error(responseData?.error || "تعذر تحميل نص الصفحة")
+      const loadLocalPage = () => loadOfflineQuranReadingPage<PageResponse>(page).catch(() => null)
+      let data = await loadLocalPage()
+      let lastError: Error | null = null
+
+      for (let attempt = 0; !data && attempt <= READING_PAGE_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          const response = await fetch(`/api/quran?page=${page}&content=reading`)
+          const responseData = await response.json().catch(() => null) as PageResponse | null
+          if (!response.ok || !responseData?.verses?.length) {
+            throw new Error(responseData?.error || "تعذر تحميل نص الصفحة")
+          }
+          data = responseData
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error("تعذر تحميل نص الصفحة")
+          if (attempt >= READING_PAGE_RETRY_DELAYS_MS.length) break
+          data = await loadLocalPage()
+          if (!data) {
+            await new Promise((resolve) => window.setTimeout(resolve, READING_PAGE_RETRY_DELAYS_MS[attempt]))
+          }
         }
-        data = responseData
       }
+
+      if (!data) throw lastError ?? new Error("تعذر تحميل نص الصفحة")
       validatePageResponse(data, page)
       const loadedPage: LoadedPage = {
         page: data.page,
@@ -3176,6 +3190,12 @@ export function QuranPlayer() {
     let fullPageError: Error | null = null
     const showPageError = (fetchError: Error) => {
       if (cancelled) return
+      const continuousPage = largeReadingPagesRef.current.find((page) => page.page === currentPage)
+      if (continuousReadingLayout && continuousPage?.verses.length) {
+        setError(null)
+        setIsLoading(false)
+        return
+      }
       setError(fetchError.message)
       setIsLoading(false)
       setIsPlaying(false)
@@ -3207,7 +3227,7 @@ export function QuranPlayer() {
     return () => {
       cancelled = true
     }
-  }, [applyLoadedPage, currentPage, reciter, reloadKey, requestLoadedPage, requestReadingPage])
+  }, [applyLoadedPage, continuousReadingLayout, currentPage, reciter, reloadKey, requestLoadedPage, requestReadingPage])
 
   useEffect(() => {
     let cancelled = false
@@ -6598,7 +6618,7 @@ export function QuranPlayer() {
             ? getAudioReviewProgressiveReveal(page, pageVerses)
             : undefined}
           readingMode={readingMode}
-          lineSpacing={continuousLayout ? "comfortable" : lineSpacing}
+          lineSpacing={lineSpacing}
           largeTextSize={largeTextSize}
           autoScroll={!continuousLayout && autoScroll}
           showOrnamentsWhenMasked={continuousLayout
@@ -6621,7 +6641,7 @@ export function QuranPlayer() {
             useCurrentLayout && adaptivePageSpacing && !continuousLayout &&
               "h-full w-full aspect-auto rounded-none border-0",
             continuousLayout && "aspect-[672/1080] border-x-0",
-            readerFocusActive && useCurrentLayout
+            readerFocusActive && useCurrentLayout && !continuousLayout
               ? readingMode === "page"
                 ? lineReadingLayout
                   ? "w-full rounded-none border-0"
@@ -6631,7 +6651,7 @@ export function QuranPlayer() {
           )}
           standardPageAspect={useCurrentLayout && pdfSaving}
           fluidPageAspect={useCurrentLayout && adaptivePageSpacing && !continuousLayout}
-          compactHorizontalMargins={useCurrentLayout && readerFocusActive && readingMode === "page"}
+          compactHorizontalMargins={!continuousLayout && useCurrentLayout && readerFocusActive && readingMode === "page"}
           pageIdentityGap={readingMode === "large"}
           highlights={continuousLayout ? [] : verseHighlights}
           highlightDraft={!continuousLayout && isCurrentPage ? highlightDraft : null}

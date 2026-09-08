@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner"
 
 import { BoundedNumberInput } from "@/components/bounded-number-input"
+import { useInterfaceLanguage, type InterfaceLanguage } from "@/components/interface-language-provider"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,7 +99,22 @@ function totalPlanDays(plan: KhatmaPlan) {
     : Math.ceil(TOTAL_PAGES / plan.dailyPages)
 }
 
+function coveredPlanDays(plan: KhatmaPlan) {
+  if (plan.method === "daily") return Math.floor(plan.completedPage / plan.dailyPages)
+  const coveredDays = Math.ceil(((plan.completedPage + 1) * plan.durationDays) / TOTAL_PAGES) - 1
+  return Math.min(Math.max(coveredDays, 0), plan.durationDays)
+}
+
+function formatOverdueDays(days: number, language: InterfaceLanguage) {
+  if (language === "en") return `${days} ${days === 1 ? "day" : "days"} behind schedule`
+  if (days === 1) return "متأخر يومًا واحدًا عن المقرر"
+  if (days === 2) return "متأخر يومين عن المقرر"
+  if (days >= 3 && days <= 10) return `متأخر ${days} أيام عن المقرر`
+  return `متأخر ${days} يومًا عن المقرر`
+}
+
 export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: KhatmaPlannerProps) {
+  const { language } = useInterfaceLanguage()
   const [loaded, setLoaded] = useState(false)
   const [todayKey, setTodayKey] = useState("1970-01-01")
   const [plan, setPlan] = useState<KhatmaPlan | null>(null)
@@ -167,6 +183,9 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
     : 0
   const completedPercent = plan ? Math.round((plan.completedPage / TOTAL_PAGES) * 100) : 0
   const isComplete = plan?.completedPage === TOTAL_PAGES
+  const overdueDays = plan && !isComplete
+    ? Math.max(0, elapsedDays - coveredPlanDays(plan))
+    : 0
   const isAhead = plan ? plan.completedPage >= expectedPage : false
   const finishDate = plan ? addDays(plan.startDate, planDays - 1) : ""
   const setupPlanDays = method === "duration" ? durationDays : Math.ceil(TOTAL_PAGES / dailyPages)
@@ -362,6 +381,16 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
                   <span className="tabular-nums">{completedPercent}%</span>
                 </div>
               </div>
+
+              {overdueDays > 0 && (
+                <div
+                  className="border-y border-destructive/25 bg-destructive/5 px-3 py-2 text-center text-sm font-semibold text-destructive"
+                  data-khatma-overdue-days={overdueDays}
+                  role="status"
+                >
+                  {formatOverdueDays(overdueDays, language)}
+                </div>
+              )}
 
               {isComplete ? (
                 <div className="border-y py-8 text-center">
