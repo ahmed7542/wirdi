@@ -3465,7 +3465,7 @@ export function QuranPlayer() {
       const runSearch = async () => {
         try {
           if (navigator.onLine === false) throw new Error("OFFLINE")
-          const response = await fetch(`/api/quran/navigation?v=7&q=${encodeURIComponent(query)}`, {
+          const response = await fetch(`/api/quran/navigation?v=8&q=${encodeURIComponent(query)}`, {
             signal: controller.signal,
           })
           const data = await response.json() as { results?: QuickNavigatorResult[] }

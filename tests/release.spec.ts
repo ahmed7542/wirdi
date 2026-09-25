@@ -3,6 +3,29 @@ import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
 import { PDFDocument, PDFName, PDFRawStream } from "pdf-lib"
 
+import {
+  getQuranSearchMatchGroup,
+  rankQuranSearchResults,
+} from "../lib/quran-search-ranking"
+
+test("يصنف اللواصق كتطابق مباشر ويرتب الصلة حسب الاكتمال والقرب", () => {
+  const attachedResult = { verseKey: "1:1", text: "وَهُوَ ٱلْعَلِيمُ ٱلْحَكِيمُ" }
+  const prefixedResult = { verseKey: "1:2", text: "فَإِنَّ ٱللَّهَ غَفُورٌ رَّحِيمٌ" }
+  expect(getQuranSearchMatchGroup(attachedResult, "هو العليم الحكيم")).toBe("direct")
+  expect(getQuranSearchMatchGroup({ verseKey: "1:3", text: "هُوَ ٱلْعَلِيمُ ٱلْحَكِيمُ" }, "وهو العليم الحكيم")).toBe("related")
+  expect(getQuranSearchMatchGroup(prefixedResult, "ان الله غفور رحيم")).toBe("direct")
+  expect(getQuranSearchMatchGroup(attachedResult, "هو العليم الحكييم")).toBe("related")
+
+  const query = "الله غفور رحيم"
+  const ranked = rankQuranSearchResults([
+    { verseKey: "1:4", text: "الله غفور" },
+    { verseKey: "1:3", text: "رحيم الله غفور" },
+    { verseKey: "1:2", text: "الله واسع الفضل كثير العطاء وهو غفور رحيم" },
+    { verseKey: "1:1", text: "الله واسع غفور رحيم" },
+  ], query)
+  expect(ranked.map((result) => result.verseKey)).toEqual(["1:1", "1:2", "1:3", "1:4"])
+})
+
 async function openMushaf(page: Page) {
   await page.goto("/", { waitUntil: "networkidle" })
   await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
@@ -117,7 +140,7 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
     relatedResultCount: number
     totalResults?: number
   }
-  expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
+  expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "12:83"])
   expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.matchGroup)).toEqual(["direct", "related"])
   expect(exactPhrasePayload.directResultCount).toBe(1)
   expect(exactPhrasePayload.relatedResultCount).toBe(49)

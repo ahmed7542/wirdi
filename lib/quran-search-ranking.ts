@@ -71,11 +71,27 @@ function wholePhraseIndex(text: string, query: string) {
   return -1
 }
 
+const SHORT_PREFIXED_WORDS = new Set(["وهو", "فهو", "وهي", "فهي", "وان", "فان"])
+
+function tokenVariants(value: string) {
+  const variants = new Set([value])
+  const pending = [value]
+  while (pending.length > 0) {
+    const token = pending.pop()!
+    const add = (variant: string) => {
+      if (!variant || variants.has(variant)) return
+      variants.add(variant)
+      pending.push(variant)
+    }
+    if (/^[وف]/.test(token) && (token.length > 3 || SHORT_PREFIXED_WORDS.has(token))) add(token.slice(1))
+    if (/^[بكل]/.test(token) && token.slice(1).startsWith("ال") && token.length > 4) add(token.slice(1))
+    if (token.startsWith("ال") && token.length > 4) add(token.slice(2))
+  }
+  return [...variants]
+}
+
 function comparableToken(value: string) {
-  let token = value
-  if (/^[وف]/.test(token) && token.length > 4) token = token.slice(1)
-  if (token.startsWith("ال") && token.length > 4) token = token.slice(2)
-  return token
+  return tokenVariants(value).sort((first, second) => first.length - second.length)[0]
 }
 
 function isOneEditApart(first: string, second: string) {
@@ -102,13 +118,98 @@ function isOneEditApart(first: string, second: string) {
 
 function tokenSimilarity(queryToken: string, targetToken: string) {
   if (queryToken === targetToken) return 1
-  const queryComparable = comparableToken(queryToken)
-  const targetComparable = comparableToken(targetToken)
-  if (queryComparable === targetComparable && queryComparable.length >= 2) return 0.94
-  const shortestLength = Math.min(queryComparable.length, targetComparable.length)
-  if (shortestLength >= 4 && (queryComparable.includes(targetComparable) || targetComparable.includes(queryComparable))) return 0.82
-  if (shortestLength >= 5 && isOneEditApart(queryComparable, targetComparable)) return 0.72
-  return 0
+  const queryVariants = tokenVariants(queryToken)
+  const targetVariants = tokenVariants(targetToken)
+  if (queryVariants.some((variant) => targetVariants.includes(variant) && variant.length >= 2)) return 0.96
+
+  let bestSimilarity = 0
+  for (const queryVariant of queryVariants) {
+    for (const targetVariant of targetVariants) {
+      const queryComparable = comparableToken(queryVariant)
+      const targetComparable = comparableToken(targetVariant)
+      const shortestLength = Math.min(queryComparable.length, targetComparable.length)
+      if (shortestLength >= 4 && (queryComparable.includes(targetComparable) || targetComparable.includes(queryComparable))) {
+        bestSimilarity = Math.max(bestSimilarity, 0.82)
+      } else if (shortestLength >= 5 && isOneEditApart(queryComparable, targetComparable)) {
+        bestSimilarity = Math.max(bestSimilarity, 0.72)
+      }
+    }
+  }
+  return bestSimilarity
+}
+
+type TokenAlignment = {
+  matched: number
+  similarity: number
+  first: number
+  last: number
+}
+
+const EMPTY_ALIGNMENT: TokenAlignment = { matched: 0, similarity: 0, first: -1, last: -1 }
+
+function betterAlignment(first: TokenAlignment, second: TokenAlignment) {
+  if (first.matched !== second.matched) return first.matched > second.matched ? first : second
+  if (first.similarity !== second.similarity) return first.similarity > second.similarity ? first : second
+  const firstSpan = first.matched > 0 ? first.last - first.first + 1 : Number.MAX_SAFE_INTEGER
+  const secondSpan = second.matched > 0 ? second.last - second.first + 1 : Number.MAX_SAFE_INTEGER
+  return firstSpan <= secondSpan ? first : second
+}
+
+function orderedTokenAlignment(queryTokens: string[], targetTokens: string[]) {
+  const rows: TokenAlignment[][] = Array.from(
+    { length: queryTokens.length + 1 },
+    () => Array.from({ length: targetTokens.length + 1 }, () => ({ ...EMPTY_ALIGNMENT })),
+  )
+  for (let queryIndex = 1; queryIndex <= queryTokens.length; queryIndex += 1) {
+    for (let targetIndex = 1; targetIndex <= targetTokens.length; targetIndex += 1) {
+      let best = betterAlignment(rows[queryIndex - 1][targetIndex], rows[queryIndex][targetIndex - 1])
+      const similarity = tokenSimilarity(queryTokens[queryIndex - 1], targetTokens[targetIndex - 1])
+      if (similarity >= 0.72) {
+        const previous = rows[queryIndex - 1][targetIndex - 1]
+        const matched: TokenAlignment = {
+          matched: previous.matched + 1,
+          similarity: previous.similarity + similarity,
+          first: previous.matched > 0 ? previous.first : targetIndex - 1,
+          last: targetIndex - 1,
+        }
+        best = betterAlignment(best, matched)
+      }
+      rows[queryIndex][targetIndex] = best
+    }
+  }
+  return rows[queryTokens.length][targetTokens.length]
+}
+
+function unorderedTokenAlignment(queryTokens: string[], targetTokens: string[]) {
+  const candidates = queryTokens.flatMap((queryToken, queryIndex) => targetTokens.map((targetToken, targetIndex) => ({
+    queryIndex,
+    targetIndex,
+    similarity: tokenSimilarity(queryToken, targetToken),
+  })))
+    .filter((candidate) => candidate.similarity >= 0.72)
+    .sort((first, second) => second.similarity - first.similarity)
+  const usedQueries = new Set<number>()
+  const usedTargets = new Set<number>()
+  let similarity = 0
+  for (const candidate of candidates) {
+    if (usedQueries.has(candidate.queryIndex) || usedTargets.has(candidate.targetIndex)) continue
+    usedQueries.add(candidate.queryIndex)
+    usedTargets.add(candidate.targetIndex)
+    similarity += candidate.similarity
+  }
+  return { matched: usedQueries.size, similarity }
+}
+
+function directTokenMatch(queryToken: string, targetToken: string) {
+  return queryToken === targetToken || tokenVariants(targetToken).includes(queryToken)
+}
+
+function hasConsecutiveDirectTokenMatch(queryTokens: string[], targetTokens: string[]) {
+  if (queryTokens.length === 0 || queryTokens.length > targetTokens.length) return false
+  return targetTokens.some((_, start) => {
+    if (start + queryTokens.length > targetTokens.length) return false
+    return queryTokens.every((queryToken, offset) => directTokenMatch(queryToken, targetTokens[start + offset]))
+  })
 }
 
 function analyzeText(text: string, normalizedQuery: string): MatchAnalysis {
@@ -117,33 +218,31 @@ function analyzeText(text: string, normalizedQuery: string): MatchAnalysis {
   if (normalizedText === normalizedQuery) return { group: "direct", score: 6000 }
   if (wholePhraseIndex(normalizedText, normalizedQuery) >= 0) return { group: "direct", score: 5000 }
 
-  const queryTokens = [...new Set(normalizedQuery.split(" ").filter(Boolean))]
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean)
   const targetTokens = normalizedText.split(" ").filter(Boolean)
   if (queryTokens.length === 0 || targetTokens.length === 0) return EMPTY_MATCH
+  if (hasConsecutiveDirectTokenMatch(queryTokens, targetTokens)) return { group: "direct", score: 4800 }
 
-  const matchedPositions: number[] = []
-  let similarityTotal = 0
-  for (const queryToken of queryTokens) {
-    let bestSimilarity = 0
-    let bestPosition = -1
-    targetTokens.forEach((targetToken, position) => {
-      const similarity = tokenSimilarity(queryToken, targetToken)
-      if (similarity > bestSimilarity) {
-        bestSimilarity = similarity
-        bestPosition = position
-      }
-    })
-    if (bestPosition >= 0 && bestSimilarity >= 0.72) matchedPositions.push(bestPosition)
-    similarityTotal += bestSimilarity
+  const ordered = orderedTokenAlignment(queryTokens, targetTokens)
+  const unordered = unorderedTokenAlignment(queryTokens, targetTokens)
+  if (unordered.matched === 0) return EMPTY_MATCH
+
+  const unorderedCoverage = unordered.matched / queryTokens.length
+  const unorderedSimilarity = unordered.similarity / queryTokens.length
+  const orderedCoverage = ordered.matched / queryTokens.length
+  const orderedSimilarity = ordered.similarity / queryTokens.length
+  if (ordered.matched === queryTokens.length) {
+    const span = ordered.last - ordered.first + 1
+    const proximity = queryTokens.length / Math.max(span, queryTokens.length)
+    return { group: "related", score: 3300 + orderedSimilarity * 400 + proximity * 300 }
   }
-
-  const matchedRatio = matchedPositions.length / queryTokens.length
-  const similarity = similarityTotal / queryTokens.length
-  if (matchedPositions.length === 0) return EMPTY_MATCH
-  const ordered = matchedPositions.every((position, index) => index === 0 || position > matchedPositions[index - 1])
-  if (matchedRatio === 1 && ordered) return { group: "related", score: 3200 + similarity * 500 }
-  if (matchedRatio === 1) return { group: "related", score: 2700 + similarity * 500 }
-  return { group: "related", score: 900 + matchedRatio * 1100 + similarity * 600 }
+  if (unordered.matched === queryTokens.length) {
+    return { group: "related", score: 2800 + unorderedSimilarity * 500 }
+  }
+  return {
+    group: "related",
+    score: 700 + unorderedCoverage * 1500 + unorderedSimilarity * 500 + orderedCoverage * 300,
+  }
 }
 
 function analyzeResult(result: QuranSearchRankable, query: string): MatchAnalysis {
@@ -151,7 +250,9 @@ function analyzeResult(result: QuranSearchRankable, query: string): MatchAnalysi
   const textMatch = analyzeText(result.text, normalizedQuery)
   const titleMatch = result.title ? analyzeText(result.title, normalizedQuery) : EMPTY_MATCH
   const best = titleMatch.score > textMatch.score ? titleMatch : textMatch
-  if (result.matchGroup === "direct") return { group: "direct", score: Math.max(best.score, 6000) }
+  if (result.matchGroup === "direct") {
+    return best.group === "direct" ? best : { group: "direct", score: 6000 }
+  }
   return best
 }
 

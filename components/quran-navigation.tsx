@@ -309,7 +309,7 @@ export function QuranNavigation({
             const offline = await searchOfflineQuran(normalized)
             remoteResults = offline.results.map((result) => ({ ...result, id: `verse-${result.verseKey}`, kind: "verse" }))
           } else {
-            const response = await fetch(`/api/quran/navigation?v=7&q=${encodeURIComponent(normalized)}`, {
+            const response = await fetch(`/api/quran/navigation?v=8&q=${encodeURIComponent(normalized)}`, {
               signal: controller.signal,
             })
             const body = (await response.json()) as { results?: SearchResult[]; error?: string }
