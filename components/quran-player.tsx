@@ -428,6 +428,7 @@ function localQuickNavigationSearch(
       text: result.text ?? result.detail,
       page: result.startPage,
       title: result.title,
+      matchGroup: "direct",
     }
   })
 }
@@ -1168,7 +1169,7 @@ export function QuranPlayer() {
   const [quickNavigatorQuery, setQuickNavigatorQuery] = useState("")
   const [quickNavigatorBrowseTab, setQuickNavigatorBrowseTab] = useState<QuickNavigatorBrowseTab>("nearby")
   const [quickNavigatorResults, setQuickNavigatorResults] = useState<QuickNavigatorResult[]>([])
-  const [quickNavigatorResultCount, setQuickNavigatorResultCount] = useState(0)
+  const [quickShowRelatedResults, setQuickShowRelatedResults] = useState(false)
   const [quickNavigationData, setQuickNavigationData] = useState<QuickNavigationData | null>(null)
   const [quickNavigatorPage, setQuickNavigatorPage] = useState(currentPage)
   const [quickNavigatorDragging, setQuickNavigatorDragging] = useState(false)
@@ -3447,7 +3448,6 @@ export function QuranPlayer() {
     const query = quickNavigatorQuery.trim()
     if (!isQuranSearchQueryReady(query)) {
       setQuickNavigatorResults([])
-      setQuickNavigatorResultCount(0)
       return
     }
 
@@ -3455,22 +3455,20 @@ export function QuranPlayer() {
     if (isStructuralQuranSearch(query)) {
       if (localResults[0]) preloadNavigationPage(localResults[0].page)
       setQuickNavigatorResults(localResults)
-      setQuickNavigatorResultCount(localResults.length)
       return
     }
 
     setQuickNavigatorResults(localResults)
-    setQuickNavigatorResultCount(localResults.length)
     let cancelled = false
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       const runSearch = async () => {
         try {
           if (navigator.onLine === false) throw new Error("OFFLINE")
-          const response = await fetch(`/api/quran/navigation?v=6&q=${encodeURIComponent(query)}`, {
+          const response = await fetch(`/api/quran/navigation?v=7&q=${encodeURIComponent(query)}`, {
             signal: controller.signal,
           })
-          const data = await response.json() as { results?: QuickNavigatorResult[]; totalResults?: number }
+          const data = await response.json() as { results?: QuickNavigatorResult[] }
           if (!response.ok) throw new Error("تعذر البحث")
           if (cancelled) return
           const results = data.results ?? []
@@ -3488,7 +3486,6 @@ export function QuranPlayer() {
           )
           if (merged[0]) preloadNavigationPage(merged[0].page)
           setQuickNavigatorResults(merged)
-          setQuickNavigatorResultCount(Math.max(merged.length, (data.totalResults ?? results.length) + localResults.length))
         } catch {
           if (cancelled) return
           const offline = await searchOfflineQuran(query)
@@ -3499,7 +3496,6 @@ export function QuranPlayer() {
           }))], query)
           if (merged[0]) preloadNavigationPage(merged[0].page)
           setQuickNavigatorResults(merged)
-          setQuickNavigatorResultCount(Math.max(merged.length, offline.totalResults + localResults.length))
         }
       }
       void runSearch()
@@ -3787,6 +3783,7 @@ export function QuranPlayer() {
     setDashboardOpen(false)
     setQuickNavigatorOpen(false)
     setQuickSearchExpanded(false)
+    setQuickShowRelatedResults(false)
     setQuickNavigatorQuery("")
     moveToPage(page, verseKey)
   }
@@ -3795,6 +3792,7 @@ export function QuranPlayer() {
     quickNavigatorPageRef.current = currentPage
     setQuickNavigatorPage(currentPage)
     setQuickSearchExpanded(false)
+    setQuickShowRelatedResults(false)
     setQuickNavigatorOpen(true)
   }
 
@@ -7613,7 +7611,10 @@ export function QuranPlayer() {
         <Input
           autoFocus={!dashboard}
           value={quickNavigatorQuery}
-          onChange={(event) => setQuickNavigatorQuery(event.target.value)}
+          onChange={(event) => {
+            setQuickNavigatorQuery(event.target.value)
+            setQuickShowRelatedResults(false)
+          }}
           placeholder="آية، سورة، الجزء 5، الحزب 12، أو 2:255"
           aria-label="البحث السريع في القرآن"
           className={cn("min-w-0 flex-1 border-0 bg-transparent px-0 text-right shadow-none focus-visible:ring-0", dashboard ? "h-9 text-sm" : "h-10 text-base")}
@@ -7822,8 +7823,16 @@ export function QuranPlayer() {
           quickSearchExpanded ? "min-h-0 flex-1" : dashboard ? "max-h-[42dvh]" : "max-h-64",
         )}>
           <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur-sm">
-            <div className="flex min-h-9 items-center justify-between gap-2 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-              <span>{quickNavigatorResultCount > 0 ? `${quickNavigatorResultCount} نتيجة` : "لا توجد نتائج"}</span>
+            <div className="flex min-h-9 items-center justify-between gap-2 px-2 py-1.5">
+              <span className="text-sm font-semibold text-foreground" data-direct-result-count={quickNavigatorMatchStats.direct}>
+                {language === "en"
+                  ? quickNavigatorMatchStats.direct > 0
+                    ? `${quickNavigatorMatchStats.direct} direct ${quickNavigatorMatchStats.direct === 1 ? "match" : "matches"}`
+                    : "No direct matches"
+                  : quickNavigatorMatchStats.direct > 0
+                    ? `${quickNavigatorMatchStats.direct} تطابق مباشر`
+                    : "لا يوجد تطابق مباشر"}
+              </span>
               {!dashboard && quickNavigatorResults.length > 0 && (
                 <Button
                   variant="ghost"
@@ -7840,24 +7849,42 @@ export function QuranPlayer() {
               )}
             </div>
             {quickSearchExpanded && (
-              <dl className="grid grid-cols-2 border-t bg-secondary/25 text-center sm:grid-cols-4" data-search-stats>
+              <dl className="grid grid-cols-2 border-t bg-secondary/25 text-center" data-search-stats>
                 {([
-                  [language === "en" ? "Total" : "الإجمالي", quickNavigatorResultCount],
-                  [language === "en" ? "Shown" : "المعروض", quickNavigatorResults.length],
-                  [language === "en" ? "Direct" : "المباشر", quickNavigatorMatchStats.direct],
-                  [language === "en" ? "Related" : "ذو صلة", quickNavigatorMatchStats.related],
+                  [language === "en" ? "Direct matches" : "التطابق المباشر", quickNavigatorMatchStats.direct],
+                  [language === "en" ? "Related suggestions" : "نتائج ذات صلة", quickNavigatorMatchStats.related],
                 ] as const).map(([label, value]) => (
-                  <div key={label} className="border-b px-2 py-2 odd:border-l sm:border-b-0 sm:border-l sm:last:border-l-0">
+                  <div key={label} className="border-l px-2 py-2 last:border-l-0">
                     <dt className="text-[11px] text-muted-foreground">{label}</dt>
-                    <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{value}</dd>
+                    <dd className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{value}</dd>
                   </div>
                 ))}
               </dl>
             )}
+            {quickNavigatorMatchStats.related > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-full justify-between rounded-none border-t px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+                aria-label={quickShowRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
+                aria-expanded={quickShowRelatedResults}
+                data-related-results-toggle
+                onClick={() => setQuickShowRelatedResults((visible) => !visible)}
+              >
+                <span>
+                  {language === "en"
+                    ? `Related suggestions (${quickNavigatorMatchStats.related}) · optional`
+                    : `نتائج ذات صلة (${quickNavigatorMatchStats.related}) · اختيارية`}
+                </span>
+                {quickShowRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+              </Button>
+            )}
           </div>
           {quickNavigatorResults.length > 0 ? (quickSearchExpanded
-            ? quickNavigatorResults
-            : quickNavigatorResults.slice(0, dashboard ? 12 : 10)).map((result, index, visibleResults) => {
+            ? quickNavigatorResults.filter((result) => quickShowRelatedResults || getQuranSearchMatchGroup(result, quickNavigatorQuery) === "direct")
+            : quickNavigatorResults
+                .filter((result) => quickShowRelatedResults || getQuranSearchMatchGroup(result, quickNavigatorQuery) === "direct")
+                .slice(0, dashboard ? 12 : quickShowRelatedResults ? 20 : 10)).map((result, index, visibleResults) => {
             const matchGroup = getQuranSearchMatchGroup(result, quickNavigatorQuery)
             const previousMatchGroup = index > 0
               ? getQuranSearchMatchGroup(visibleResults[index - 1], quickNavigatorQuery)
@@ -7903,7 +7930,7 @@ export function QuranPlayer() {
                 </button>
               </div>
             )
-          }) : <p className="px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>}
+          }) : <p className="px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مباشرة</p>}
         </div>
       )}
     </div>

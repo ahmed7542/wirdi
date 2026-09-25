@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { BookOpen, ChevronUp, Headphones, History, LoaderCircle, Mic, RefreshCw, Search, Shuffle } from "lucide-react"
+import { BookOpen, ChevronDown, ChevronUp, Headphones, History, LoaderCircle, Mic, RefreshCw, Search, Shuffle } from "lucide-react"
 
 import { useInterfaceLanguage } from "@/components/interface-language-provider"
 import {
@@ -193,11 +193,23 @@ export function QuranNavigation({
   const [query, setQuery] = useState("")
   const [recentLocations, setRecentLocations] = useState<RecentReadingLocation[]>([])
   const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [showRelatedResults, setShowRelatedResults] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
   const [pageInput, setPageInput] = useState(String(currentPage))
 
   const normalizedQuery = normalizeArabic(query)
+  const directSearchResults = useMemo(
+    () => results?.filter((result) => getQuranSearchMatchGroup(result, query) === "direct") ?? [],
+    [query, results],
+  )
+  const relatedSearchResults = useMemo(
+    () => results?.filter((result) => getQuranSearchMatchGroup(result, query) === "related") ?? [],
+    [query, results],
+  )
+  const visibleSearchResults = showRelatedResults
+    ? [...directSearchResults, ...relatedSearchResults]
+    : directSearchResults
   const localSearchResults = useMemo<SearchResult[]>(() => data
     ? searchQuranNavigationLocally(data, query, language).map((result) => ({
         id: result.id,
@@ -207,6 +219,7 @@ export function QuranNavigation({
         page: result.startPage,
         title: result.title,
         detail: result.detail,
+        matchGroup: "direct",
       }))
     : [], [data, language, query])
   const currentChapter = data?.chapters.find((chapter) => chapter.id === currentChapterId)
@@ -296,7 +309,7 @@ export function QuranNavigation({
             const offline = await searchOfflineQuran(normalized)
             remoteResults = offline.results.map((result) => ({ ...result, id: `verse-${result.verseKey}`, kind: "verse" }))
           } else {
-            const response = await fetch(`/api/quran/navigation?v=6&q=${encodeURIComponent(normalized)}`, {
+            const response = await fetch(`/api/quran/navigation?v=7&q=${encodeURIComponent(normalized)}`, {
               signal: controller.signal,
             })
             const body = (await response.json()) as { results?: SearchResult[]; error?: string }
@@ -532,7 +545,10 @@ export function QuranNavigation({
         )}
         <Input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setShowRelatedResults(false)
+          }}
           placeholder="ابحث في القرآن أو اكتب 2:255"
           aria-label="البحث في القرآن"
           className={cn("pr-9 pl-9 text-right", dashboard && "sm:pr-24")}
@@ -545,14 +561,43 @@ export function QuranNavigation({
         <div className="px-4 pb-4 pt-3">
           {searchError && <p className="mb-2 text-sm text-destructive">{searchError}</p>}
           <ScrollArea className="h-[min(56vh,590px)]">
-            <p className="sticky top-0 bg-card py-2 text-xs font-semibold text-muted-foreground">النتائج</p>
+            <div className="sticky top-0 z-10 border-b bg-card">
+              <p className="px-2 py-2 text-sm font-semibold text-foreground">
+                {language === "en"
+                  ? directSearchResults.length > 0
+                    ? `${directSearchResults.length} direct ${directSearchResults.length === 1 ? "match" : "matches"}`
+                    : "No direct matches"
+                  : directSearchResults.length > 0
+                    ? `${directSearchResults.length} تطابق مباشر`
+                    : "لا يوجد تطابق مباشر"}
+              </p>
+              {relatedSearchResults.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-full justify-between rounded-none border-t px-2 text-xs text-muted-foreground"
+                  aria-label={showRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
+                  aria-expanded={showRelatedResults}
+                  onClick={() => setShowRelatedResults((visible) => !visible)}
+                >
+                  <span>
+                    {language === "en"
+                      ? `Related suggestions (${relatedSearchResults.length}) · optional`
+                      : `نتائج ذات صلة (${relatedSearchResults.length}) · اختيارية`}
+                  </span>
+                  {showRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                </Button>
+              )}
+            </div>
             {!searching && results?.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>
+            ) : !searching && directSearchResults.length === 0 && !showRelatedResults ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">يمكنك استعراض النتائج ذات الصلة كخيار إضافي</p>
             ) : (
-              results?.map((result, index, visibleResults) => {
+              visibleSearchResults.map((result, index, displayedResults) => {
                 const matchGroup = getQuranSearchMatchGroup(result, query)
                 const previousMatchGroup = index > 0
-                  ? getQuranSearchMatchGroup(visibleResults[index - 1], query)
+                  ? getQuranSearchMatchGroup(displayedResults[index - 1], query)
                   : null
                 return (
                   <div

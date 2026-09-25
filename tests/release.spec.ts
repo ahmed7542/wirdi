@@ -113,20 +113,32 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   expect(exactPhraseResponse.ok()).toBeTruthy()
   const exactPhrasePayload = await exactPhraseResponse.json() as {
     results: Array<{ verseKey: string; matchGroup: "direct" | "related" }>
+    directResultCount: number
+    relatedResultCount: number
+    totalResults?: number
   }
   expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
   expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.matchGroup)).toEqual(["direct", "related"])
+  expect(exactPhrasePayload.directResultCount).toBe(1)
+  expect(exactPhrasePayload.relatedResultCount).toBe(49)
+  expect(exactPhrasePayload.totalResults).toBeUndefined()
 
   await openMushaf(page)
   await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
   const searchInput = page.locator('input[aria-label="البحث السريع في القرآن"]:visible')
   await searchInput.fill(exactPhraseQuery)
   await expect(page.locator('button[data-verse-key="66:2"]:visible')).toBeVisible()
-  await expect(page.locator('button[data-verse-key="43:84"]:visible')).toBeVisible()
+  await expect(page.locator('button[data-verse-key="43:84"]:visible')).toHaveCount(0)
+  await expect(page.locator('[data-direct-result-count="1"]:visible')).toHaveText("1 تطابق مباشر")
+  await expect(page.getByText("201 نتيجة", { exact: true })).toHaveCount(0)
   const exactPhraseVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
     .evaluateAll((results) => results.map((result) => result.getAttribute("data-verse-key")))
-  expect(exactPhraseVerseKeys.slice(0, 2)).toEqual(["66:2", "43:84"])
+  expect(exactPhraseVerseKeys).toEqual(["66:2"])
   await expect(page.locator('[data-search-group="direct"]:visible')).toHaveText("تطابق مباشر")
+  await expect(page.locator('[data-search-group="related"]:visible')).toHaveCount(0)
+
+  await page.getByRole("button", { name: "إظهار النتائج ذات الصلة" }).click()
+  await expect(page.locator('button[data-verse-key="43:84"]:visible')).toBeVisible()
   await expect(page.locator('[data-search-group="related"]:visible')).toHaveText("نتائج ذات صلة")
   const visibleGroups = await page.locator("[data-search-result-group]:visible")
     .evaluateAll((results) => results.map((result) => result.getAttribute("data-search-result-group")))
@@ -140,8 +152,10 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   await page.getByRole("button", { name: "استعراض النتائج في صفحة كاملة" }).click()
   const fullResults = page.locator('[data-search-fullscreen="true"]')
   await expect(fullResults).toBeVisible()
-  await expect(fullResults.locator("[data-search-stats]")).toContainText("الإجمالي")
-  await expect(fullResults.locator("[data-search-stats]")).toContainText("المباشر")
+  await expect(fullResults.locator("[data-search-stats]")).toContainText("التطابق المباشر")
+  await expect(fullResults.locator("[data-search-stats]")).toContainText("نتائج ذات صلة")
+  await expect(fullResults.locator("[data-search-stats]")).not.toContainText("الإجمالي")
+  await expect(fullResults.locator("[data-search-stats]")).not.toContainText("المعروض")
   expect(await fullResults.locator("[data-search-result-group]").count()).toBeGreaterThan(10)
   await page.getByRole("button", { name: "العودة إلى قائمة النتائج المصغرة" }).click()
   await expect(fullResults).toHaveCount(0)

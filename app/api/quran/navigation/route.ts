@@ -34,7 +34,6 @@ type VerseResponse = {
 
 type SearchResponse = {
   search?: {
-    total_results?: number
     results?: Array<{
       verse_key: string
       text: string
@@ -221,7 +220,8 @@ export async function GET(request: Request) {
         page: findPage(chapter, verse),
         matchGroup: "direct" as const,
       }],
-      totalResults: 1,
+      directResultCount: 1,
+      relatedResultCount: 0,
     })
   }
 
@@ -231,7 +231,11 @@ export async function GET(request: Request) {
 
   const localResults = navigationResults(query)
   const isDirectNavigation = localResults.some((result) => result.kind === "juz" || result.kind === "hizb")
-  if (isDirectNavigation) return Response.json({ results: localResults, totalResults: localResults.length })
+  if (isDirectNavigation) return Response.json({
+    results: localResults,
+    directResultCount: localResults.length,
+    relatedResultCount: 0,
+  })
 
   try {
     const searchUrl = new URL(`${QURAN_API_URL}/search`)
@@ -262,14 +266,19 @@ export async function GET(request: Request) {
       ...result,
       matchGroup: getQuranSearchMatchGroup(result, query),
     }))
-    const totalResults = (data.search?.total_results ?? verseResults.length) + localResults.length
+    const directResultCount = results.filter((result) => result.matchGroup === "direct").length
+    const relatedResultCount = results.length - directResultCount
 
-    return Response.json({ results, totalResults }, {
+    return Response.json({ results, directResultCount, relatedResultCount }, {
       headers: { "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600" },
     })
   } catch (error) {
     console.error("Failed to search Quran", error)
-    if (localResults.length > 0) return Response.json({ results: localResults, totalResults: localResults.length })
+    if (localResults.length > 0) return Response.json({
+      results: localResults,
+      directResultCount: localResults.length,
+      relatedResultCount: 0,
+    })
     return Response.json({ error: "تعذر البحث الآن" }, { status: 502 })
   }
 }
