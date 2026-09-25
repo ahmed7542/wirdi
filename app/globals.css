@@ -618,6 +618,10 @@ nextjs-portal { display: none !important; }
   mask: url("/icons/wird-mark.png") center / contain no-repeat;
 }
 
+[data-wird-header-prompt-host]:has([data-wird-update-prompt]) [data-reading-return-prompt] {
+  display: none;
+}
+
 html[data-high-contrast="true"] {
   --foreground: #000000 !important;
   --card-foreground: #000000 !important;

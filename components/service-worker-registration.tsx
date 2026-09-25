@@ -294,6 +294,7 @@ export function ServiceWorkerRegistration() {
 
   return createPortal(
     <div
+      data-wird-update-prompt
       role="status"
       aria-live="polite"
       className="pointer-events-auto flex h-8 w-max max-w-[min(58vw,240px)] items-center gap-1 rounded-md border border-primary/15 bg-secondary/95 px-1.5 text-secondary-foreground shadow-sm backdrop-blur"

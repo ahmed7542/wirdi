@@ -533,6 +533,7 @@ const YASSER_SALAMA_RECITER_ID = 2002
 const COARSE_SYNC_RECITER_IDS = new Set([AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID])
 const MAX_PAGE = 604
 const KHATMA_REMINDER_PROMPT_TIMEOUT_MS = 10_000
+const READING_RETURN_PROMPT_TIMEOUT_MS = 6_000
 const MIN_SPEED = 0.5
 const SLIDER_MAX_SPEED = 3
 const EXTENDED_MIN_SPEED = 3.25
@@ -2408,6 +2409,15 @@ export function QuranPlayer() {
     )
     return () => window.clearTimeout(timeout)
   }, [khatmaReminderPrompt])
+
+  useEffect(() => {
+    if (!readingReturnLocation) return
+    const timeout = window.setTimeout(
+      () => setReadingReturnLocation(null),
+      READING_RETURN_PROMPT_TIMEOUT_MS,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [readingReturnLocation])
 
   useEffect(() => {
     if (!settingsLoaded) return
@@ -8106,9 +8116,39 @@ export function QuranPlayer() {
             landscapeReadingMode && largeControls && "h-12 min-h-12 py-0 sm:h-12 sm:min-h-12 sm:py-0",
           )}>
             <div
-              data-wird-update-host
-              className="pointer-events-none absolute top-1/2 left-1/2 z-40 -translate-x-1/2 -translate-y-1/2"
-            />
+              data-wird-header-prompt-host
+              className="pointer-events-none absolute top-1/2 left-1/2 z-40 flex -translate-x-1/2 -translate-y-1/2 items-center"
+            >
+              <div data-wird-update-host className="contents" />
+              {readingReturnLocation && !mutashabihatOpen && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="pointer-events-auto flex h-8 w-max max-w-[min(68vw,260px)] animate-in items-center gap-1 rounded-md border border-primary/15 bg-secondary/95 px-1.5 text-secondary-foreground shadow-sm fade-in slide-in-from-top-1 backdrop-blur duration-200 motion-reduce:animate-none"
+                  data-reading-return-prompt
+                  dir="rtl"
+                >
+                  <Button
+                    size="xs"
+                    className="h-6 min-w-0 gap-1 px-1.5 text-[11px] sm:text-xs"
+                    data-reading-return-source={readingReturnLocation.source}
+                    onClick={returnToReadingLocation}
+                  >
+                    <ChevronRight className="size-3.5 shrink-0" />
+                    <span className="truncate">العودة إلى موضعك السابق</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-6 shrink-0 text-muted-foreground"
+                    aria-label="إغلاق خيار العودة"
+                    onClick={() => setReadingReturnLocation(null)}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              )}
+            </div>
             <div className="relative z-20 flex min-w-0 items-center gap-[6px] sm:gap-1.5">
               <button
                 type="button"
@@ -8880,19 +8920,6 @@ export function QuranPlayer() {
             </div>
           </DialogContent>
         </Dialog>
-
-        {readingReturnLocation && !mutashabihatOpen && (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="fixed bottom-[calc(var(--wird-player-height,80px)+0.75rem)] left-3 z-[45] border bg-card/95 shadow-md backdrop-blur"
-            data-reading-return-source={readingReturnLocation.source}
-            onClick={returnToReadingLocation}
-          >
-            <ChevronRight />
-            العودة إلى موضعك السابق
-          </Button>
-        )}
 
         <Dialog open={Boolean(sessionSummary)} onOpenChange={(open) => !open && setSessionSummary(null)}>
           <DialogContent className="max-w-md text-right" dir="rtl">

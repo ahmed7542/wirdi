@@ -273,11 +273,39 @@ test("يبحث عن آية الكرسي بالاسم الشائع وينتقل �
 
   await page.locator('button[data-verse-key="2:255"]:visible').click()
   await expect(page.getByLabel("صفحة 42 من المصحف الشريف")).toBeVisible()
+  const returnPrompt = page.locator("[data-reading-return-prompt]")
   const returnButton = page.getByRole("button", { name: "العودة إلى موضعك السابق" })
+  await expect(returnPrompt).toBeVisible()
   await expect(returnButton).toHaveAttribute("data-reading-return-source", "search")
+  await expect(page.getByRole("button", { name: "إغلاق خيار العودة" })).toBeVisible()
+  const promptBounds = (await returnPrompt.boundingBox())!
+  const viewportWidth = page.viewportSize()!.width
+  expect(Math.abs((promptBounds.x + promptBounds.width / 2) - viewportWidth / 2)).toBeLessThanOrEqual(1)
+  expect(promptBounds.y).toBeLessThanOrEqual(80)
+  expect(promptBounds.height).toBeLessThanOrEqual(36)
   await returnButton.click()
   await expect(page.getByLabel("صفحة 1 من المصحف الشريف")).toBeVisible()
   await expect(returnButton).toHaveCount(0)
+})
+
+test("يغلق خيار العودة يدويًا ويخفيه تلقائيًا بعد مهلة قصيرة", async ({ page }) => {
+  await openMushaf(page)
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').first().fill("آية الكرسي")
+  await page.locator('button[data-verse-key="2:255"]:visible').click()
+  await expect(page.getByLabel("صفحة 42 من المصحف الشريف")).toBeVisible()
+
+  const returnPrompt = page.locator("[data-reading-return-prompt]")
+  await expect(returnPrompt).toBeVisible()
+  await page.getByRole("button", { name: "إغلاق خيار العودة" }).click()
+  await expect(returnPrompt).toHaveCount(0)
+
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').first().fill("صفحة 1")
+  await page.locator('button[data-search-id="page-1"]:visible').click()
+  await expect(page.getByLabel("صفحة 1 من المصحف الشريف")).toBeVisible()
+  await expect(returnPrompt).toBeVisible()
+  await expect(returnPrompt).toHaveCount(0, { timeout: 7_500 })
 })
 
 test("يوحد فئات التنقل أسفل بحث المصحف دون قسم منفصل", async ({ page }) => {
