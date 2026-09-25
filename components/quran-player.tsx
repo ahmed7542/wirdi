@@ -7819,10 +7819,10 @@ export function QuranPlayer() {
 
       {section !== "tracks" && quickNavigatorQuery.trim() && (
         <div className={cn(
-          "order-2 mt-2 overflow-y-auto border-y",
+          "order-2 mt-2 flex flex-col overflow-y-auto border-y",
           quickSearchExpanded ? "min-h-0 flex-1" : dashboard ? "max-h-[42dvh]" : "max-h-64",
         )}>
-          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur-sm">
+          <div className="sticky top-0 z-10 order-1 border-b bg-background/95 backdrop-blur-sm">
             <div className="flex min-h-9 items-center justify-between gap-2 px-2 py-1.5">
               <span className="text-sm font-semibold text-foreground" data-direct-result-count={quickNavigatorMatchStats.direct}>
                 {language === "en"
@@ -7861,24 +7861,6 @@ export function QuranPlayer() {
                 ))}
               </dl>
             )}
-            {quickNavigatorMatchStats.related > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 w-full justify-between rounded-none border-t px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
-                aria-label={quickShowRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
-                aria-expanded={quickShowRelatedResults}
-                data-related-results-toggle
-                onClick={() => setQuickShowRelatedResults((visible) => !visible)}
-              >
-                <span>
-                  {language === "en"
-                    ? `Related suggestions (${quickNavigatorMatchStats.related}) · optional`
-                    : `نتائج ذات صلة (${quickNavigatorMatchStats.related}) · اختيارية`}
-                </span>
-                {quickShowRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-              </Button>
-            )}
           </div>
           {quickNavigatorResults.length > 0 ? (quickSearchExpanded
             ? quickNavigatorResults.filter((result) => quickShowRelatedResults || getQuranSearchMatchGroup(result, quickNavigatorQuery) === "direct")
@@ -7892,7 +7874,7 @@ export function QuranPlayer() {
             return (
               <div
                 key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
-                className="border-b last:border-b-0"
+                className={cn("border-b last:border-b-0", matchGroup === "direct" ? "order-2" : "order-4")}
                 data-search-result-group={matchGroup}
               >
                 {matchGroup !== previousMatchGroup && (
@@ -7930,7 +7912,25 @@ export function QuranPlayer() {
                 </button>
               </div>
             )
-          }) : <p className="px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مباشرة</p>}
+          }) : <p className="order-2 px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مباشرة</p>}
+          {quickNavigatorMatchStats.related > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="order-3 h-10 w-full shrink-0 justify-between rounded-none border-y px-3 text-xs font-medium text-muted-foreground hover:text-foreground"
+              aria-label={quickShowRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
+              aria-expanded={quickShowRelatedResults}
+              data-related-results-toggle
+              onClick={() => setQuickShowRelatedResults((visible) => !visible)}
+            >
+              <span>
+                {language === "en"
+                  ? `Related suggestions (${quickNavigatorMatchStats.related}) · optional`
+                  : `نتائج ذات صلة (${quickNavigatorMatchStats.related}) · اختيارية`}
+              </span>
+              {quickShowRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </Button>
+          )}
         </div>
       )}
     </div>

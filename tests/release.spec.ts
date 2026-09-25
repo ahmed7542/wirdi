@@ -136,10 +136,20 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   expect(exactPhraseVerseKeys).toEqual(["66:2"])
   await expect(page.locator('[data-search-group="direct"]:visible')).toHaveText("تطابق مباشر")
   await expect(page.locator('[data-search-group="related"]:visible')).toHaveCount(0)
+  expect(await page.locator("[data-quick-navigator]").evaluate((root) => {
+    const directResults = [...root.querySelectorAll<HTMLElement>('[data-search-result-group="direct"]')]
+    const toggle = root.querySelector<HTMLElement>("[data-related-results-toggle]")
+    return Boolean(toggle) && directResults.every((result) => result.getBoundingClientRect().bottom <= toggle.getBoundingClientRect().top + 1)
+  })).toBeTruthy()
 
   await page.getByRole("button", { name: "إظهار النتائج ذات الصلة" }).click()
   await expect(page.locator('button[data-verse-key="43:84"]:visible')).toBeVisible()
   await expect(page.locator('[data-search-group="related"]:visible')).toHaveText("نتائج ذات صلة")
+  expect(await page.locator("[data-quick-navigator]").evaluate((root) => {
+    const toggle = root.querySelector<HTMLElement>("[data-related-results-toggle]")
+    const relatedResults = [...root.querySelectorAll<HTMLElement>('[data-search-result-group="related"]')]
+    return Boolean(toggle) && relatedResults.every((result) => toggle.getBoundingClientRect().bottom <= result.getBoundingClientRect().top + 1)
+  })).toBeTruthy()
   const visibleGroups = await page.locator("[data-search-result-group]:visible")
     .evaluateAll((results) => results.map((result) => result.getAttribute("data-search-result-group")))
   expect(visibleGroups[0]).toBe("direct")

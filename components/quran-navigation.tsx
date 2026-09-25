@@ -561,7 +561,8 @@ export function QuranNavigation({
         <div className="px-4 pb-4 pt-3">
           {searchError && <p className="mb-2 text-sm text-destructive">{searchError}</p>}
           <ScrollArea className="h-[min(56vh,590px)]">
-            <div className="sticky top-0 z-10 border-b bg-card">
+            <div className="flex flex-col">
+            <div className="sticky top-0 z-10 order-1 border-b bg-card">
               <p className="px-2 py-2 text-sm font-semibold text-foreground">
                 {language === "en"
                   ? directSearchResults.length > 0
@@ -571,28 +572,11 @@ export function QuranNavigation({
                     ? `${directSearchResults.length} تطابق مباشر`
                     : "لا يوجد تطابق مباشر"}
               </p>
-              {relatedSearchResults.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 w-full justify-between rounded-none border-t px-2 text-xs text-muted-foreground"
-                  aria-label={showRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
-                  aria-expanded={showRelatedResults}
-                  onClick={() => setShowRelatedResults((visible) => !visible)}
-                >
-                  <span>
-                    {language === "en"
-                      ? `Related suggestions (${relatedSearchResults.length}) · optional`
-                      : `نتائج ذات صلة (${relatedSearchResults.length}) · اختيارية`}
-                  </span>
-                  {showRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                </Button>
-              )}
             </div>
             {!searching && results?.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>
+              <p className="order-2 py-10 text-center text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>
             ) : !searching && directSearchResults.length === 0 && !showRelatedResults ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">يمكنك استعراض النتائج ذات الصلة كخيار إضافي</p>
+              <p className="order-2 py-8 text-center text-sm text-muted-foreground">يمكنك استعراض النتائج ذات الصلة كخيار إضافي</p>
             ) : (
               visibleSearchResults.map((result, index, displayedResults) => {
                 const matchGroup = getQuranSearchMatchGroup(result, query)
@@ -602,7 +586,7 @@ export function QuranNavigation({
                 return (
                   <div
                     key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
-                    className="border-b"
+                    className={cn("border-b", matchGroup === "direct" ? "order-2" : "order-4")}
                     data-search-result-group={matchGroup}
                   >
                     {matchGroup !== previousMatchGroup && (
@@ -645,6 +629,25 @@ export function QuranNavigation({
                 )
               })
             )}
+            {relatedSearchResults.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="order-3 h-10 w-full justify-between rounded-none border-y px-2 text-xs text-muted-foreground"
+                aria-label={showRelatedResults ? "إخفاء النتائج ذات الصلة" : "إظهار النتائج ذات الصلة"}
+                aria-expanded={showRelatedResults}
+                data-related-results-toggle
+                onClick={() => setShowRelatedResults((visible) => !visible)}
+              >
+                <span>
+                  {language === "en"
+                    ? `Related suggestions (${relatedSearchResults.length}) · optional`
+                    : `نتائج ذات صلة (${relatedSearchResults.length}) · اختيارية`}
+                </span>
+                {showRelatedResults ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+              </Button>
+            )}
+            </div>
           </ScrollArea>
         </div>
       ) : (
