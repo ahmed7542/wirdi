@@ -16,7 +16,7 @@ const isNextControlFlow = (err: unknown): boolean => {
 };
 
 const isTeablePreview = () =>
-  process.env.NODE_ENV !== "production" &&
+  (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_TEABLE_PREVIEW === "1") &&
   typeof window !== "undefined" &&
   window.parent !== window;
 

@@ -231,10 +231,10 @@ Keep `<ErrorReporter />` in `app/layout.tsx`.
 
 ## Teable Resources Context
 
-### Current Teable Base
+### Current Teable Project
 
-- Base ID: `bseYzsmAxanGNy08jE6`
-- Use this `baseId` for any API that requires a base identifier
+- Project ID: `bseYzsmAxanGNy08jE6`
+- Use this `baseId` for any API that requires a project identifier
 
 ### Teable Resources Schema
 
