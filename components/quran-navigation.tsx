@@ -16,7 +16,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { loadQuranNavigation } from "@/lib/offline-quran-navigation"
 import { searchOfflineQuran } from "@/lib/offline-quran-search"
-import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
+import {
+  getQuranSearchHighlightSegments,
+  getQuranSearchMatchGroup,
+  rankQuranSearchResults,
+  type QuranSearchMatchGroup,
+} from "@/lib/quran-search-ranking"
 import {
   isQuranSearchQueryReady,
   isStructuralQuranSearch,
@@ -71,6 +76,7 @@ type SearchResult = {
   page: number
   title?: string
   detail?: string
+  matchGroup?: QuranSearchMatchGroup
 }
 
 let navigationDataCache: NavigationData | null = null
@@ -281,6 +287,7 @@ export function QuranNavigation({
 
     setSearching(true)
     setResults(localSearchResults)
+    const controller = new AbortController()
     const timer = setTimeout(() => {
       const runSearch = async () => {
         try {
@@ -289,7 +296,9 @@ export function QuranNavigation({
             const offline = await searchOfflineQuran(normalized)
             remoteResults = offline.results.map((result) => ({ ...result, id: `verse-${result.verseKey}`, kind: "verse" }))
           } else {
-            const response = await fetch(`/api/quran/navigation?q=${encodeURIComponent(normalized)}`)
+            const response = await fetch(`/api/quran/navigation?v=6&q=${encodeURIComponent(normalized)}`, {
+              signal: controller.signal,
+            })
             const body = (await response.json()) as { results?: SearchResult[]; error?: string }
             if (!response.ok) throw new Error(body.error || "تعذر البحث")
             remoteResults = body.results ?? []
@@ -298,21 +307,25 @@ export function QuranNavigation({
           const seen = new Set<string>()
           const merged = [...localSearchResults, ...remoteResults]
             .filter((result) => {
-              const key = result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`
+              const key = `${result.kind ?? "verse"}-${result.verseKey}`
               if (seen.has(key)) return false
               seen.add(key)
               return true
             })
           setResults(rankQuranSearchResults(merged, normalized))
         } catch (searchFailure) {
+          if (searchRequestRef.current !== requestId || controller.signal.aborted) return
           try {
             const offline = await searchOfflineQuran(normalized)
             if (searchRequestRef.current !== requestId) return
-            setResults([...localSearchResults, ...offline.results.map((result) => ({
-              ...result,
-              id: `verse-${result.verseKey}`,
-              kind: "verse" as const,
-            }))])
+            setResults(rankQuranSearchResults([
+              ...localSearchResults,
+              ...offline.results.map((result) => ({
+                ...result,
+                id: `verse-${result.verseKey}`,
+                kind: "verse" as const,
+              })),
+            ], normalized))
           } catch {
             if (searchRequestRef.current !== requestId) return
             setResults(localSearchResults)
@@ -325,9 +338,12 @@ export function QuranNavigation({
         }
       }
       void runSearch()
-    }, 320)
+    }, 180)
 
-    return () => clearTimeout(timer)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
   }, [localSearchResults, query])
 
   const suggestedPrefetchPage = activity === "read" ? results?.[0]?.page : undefined
@@ -533,29 +549,56 @@ export function QuranNavigation({
             {!searching && results?.length === 0 ? (
               <p className="py-10 text-center text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>
             ) : (
-              results?.map((result) => (
-                <div key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`} className="flex items-center gap-1 border-b py-1">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 px-2 py-2 text-right hover:bg-accent"
-                    data-search-id={result.id}
-                    onPointerDown={() => onPrefetch?.(result.page)}
-                    onClick={() => chooseVerse(result.page, result.verseKey)}
+              results?.map((result, index, visibleResults) => {
+                const matchGroup = getQuranSearchMatchGroup(result, query)
+                const previousMatchGroup = index > 0
+                  ? getQuranSearchMatchGroup(visibleResults[index - 1], query)
+                  : null
+                return (
+                  <div
+                    key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
+                    className="border-b"
+                    data-search-result-group={matchGroup}
                   >
-                    <span className="block text-xs font-semibold text-primary">
-                      {result.title ?? result.verseKey} · صفحة {formatNumber(result.page)}
-                    </span>
-                    <span
-                      className={cn(
-                        "mt-1 block line-clamp-2",
-                        result.kind === "verse" || !result.kind ? "font-quran text-xl leading-9" : "text-sm leading-6",
-                      )}
-                      data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
-                    >{result.text}</span>
-                  </button>
-
-                </div>
-              ))
+                    {matchGroup !== previousMatchGroup && (
+                      <div className="border-b bg-secondary/45 px-2 py-1.5 text-xs font-semibold text-muted-foreground" data-search-group={matchGroup}>
+                        {language === "en"
+                          ? matchGroup === "direct" ? "Direct matches" : "Related results"
+                          : matchGroup === "direct" ? "تطابق مباشر" : "نتائج ذات صلة"}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="w-full px-2 py-2 text-right hover:bg-accent"
+                      data-search-id={result.id}
+                      data-verse-key={result.verseKey}
+                      onPointerDown={() => onPrefetch?.(result.page)}
+                      onClick={() => chooseVerse(result.page, result.verseKey)}
+                    >
+                      <span className="block text-xs font-semibold text-primary">
+                        {result.title ?? result.verseKey} · صفحة {formatNumber(result.page)}
+                      </span>
+                      <span
+                        className={cn(
+                          "mt-1 block line-clamp-2",
+                          result.kind === "verse" || !result.kind ? "font-quran text-xl leading-9" : "text-sm leading-6",
+                        )}
+                        data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
+                      >
+                        {getQuranSearchHighlightSegments(result.text, query).map((segment, segmentIndex) => (
+                          <span
+                            key={`${result.verseKey}-${segmentIndex}`}
+                            className={segment.highlighted ? "rounded-sm bg-[var(--quran-highlight)]/22 px-0.5 text-foreground" : undefined}
+                            data-search-highlight={segment.highlighted ? "true" : undefined}
+                          >
+                            {segment.text}
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  </div>
+                )
+              })
             )}
           </ScrollArea>
         </div>

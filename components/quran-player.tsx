@@ -197,8 +197,12 @@ import {
   saveBookmarkCategories,
   type BookmarkCategory,
 } from "@/lib/bookmark-categories"
-import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
-import { sanitizeQuranSearchText } from "@/lib/quran-search-text"
+import {
+  getQuranSearchHighlightSegments,
+  getQuranSearchMatchGroup,
+  rankQuranSearchResults,
+  type QuranSearchMatchGroup,
+} from "@/lib/quran-search-ranking"
 import { cn } from "@/lib/utils"
 import {
   countReviewsForDate,
@@ -403,25 +407,7 @@ type QuickNavigatorResult = {
   text: string
   page: number
   title?: string
-}
-
-type QuickNavigatorBrowseTab = "nearby" | "surahs" | "juzs" | "hizbs" | "pages"
-
-type SearchTextSegment = {
-  text: string
-  highlighted: boolean
-}
-
-function normalizeSearchCharacter(value: string) {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ـ/g, "")
+  matchGroup?: QuranSearchMatchGroup
 }
 
 function localQuickNavigationSearch(
@@ -446,35 +432,7 @@ function localQuickNavigationSearch(
   })
 }
 
-function searchTextSegments(text: string, query: string): SearchTextSegment[] {
-  const cleanedText = sanitizeQuranSearchText(text)
-  const cleanedQuery = sanitizeQuranSearchText(query)
-    .replace(/^(?:سورة|سوره|الجزء|جزء|الحزب|حزب)\s+/i, "")
-    .trim()
-  if (!cleanedText || !cleanedQuery || /^\d+\s*[:：]\s*\d+$/.test(cleanedQuery)) {
-    return [{ text: cleanedText, highlighted: false }]
-  }
-
-  let normalizedText = ""
-  const sourceIndexes: number[] = []
-  Array.from(cleanedText).forEach((character, sourceIndex) => {
-    const normalizedCharacter = normalizeSearchCharacter(character)
-    Array.from(normalizedCharacter).forEach((item) => {
-      normalizedText += item
-      sourceIndexes.push(sourceIndex)
-    })
-  })
-  const normalizedQuery = normalizeSearchCharacter(cleanedQuery)
-  const matchIndex = normalizedText.indexOf(normalizedQuery)
-  if (matchIndex < 0 || !normalizedQuery) return [{ text: cleanedText, highlighted: false }]
-  const matchStart = sourceIndexes[matchIndex]
-  const matchEnd = (sourceIndexes[matchIndex + normalizedQuery.length - 1] ?? matchStart) + 1
-  return [
-    { text: cleanedText.slice(0, matchStart), highlighted: false },
-    { text: cleanedText.slice(matchStart, matchEnd), highlighted: true },
-    { text: cleanedText.slice(matchEnd), highlighted: false },
-  ].filter((segment) => segment.text)
-}
+type QuickNavigatorBrowseTab = "nearby" | "surahs" | "juzs" | "hizbs" | "pages"
 
 type SessionSummary = {
   durationSeconds: number
@@ -1206,6 +1164,7 @@ export function QuranPlayer() {
   const [preparingOfflineMutashabihat, setPreparingOfflineMutashabihat] = useState(false)
   const [readingReturnLocation, setReadingReturnLocation] = useState<ReadingReturnLocation | null>(null)
   const [quickNavigatorOpen, setQuickNavigatorOpen] = useState(false)
+  const [quickSearchExpanded, setQuickSearchExpanded] = useState(false)
   const [quickNavigatorQuery, setQuickNavigatorQuery] = useState("")
   const [quickNavigatorBrowseTab, setQuickNavigatorBrowseTab] = useState<QuickNavigatorBrowseTab>("nearby")
   const [quickNavigatorResults, setQuickNavigatorResults] = useState<QuickNavigatorResult[]>([])
@@ -3503,11 +3462,14 @@ export function QuranPlayer() {
     setQuickNavigatorResults(localResults)
     setQuickNavigatorResultCount(localResults.length)
     let cancelled = false
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
       const runSearch = async () => {
         try {
           if (navigator.onLine === false) throw new Error("OFFLINE")
-          const response = await fetch(`/api/quran/navigation?v=4&q=${encodeURIComponent(query)}`)
+          const response = await fetch(`/api/quran/navigation?v=6&q=${encodeURIComponent(query)}`, {
+            signal: controller.signal,
+          })
           const data = await response.json() as { results?: QuickNavigatorResult[]; totalResults?: number }
           if (!response.ok) throw new Error("تعذر البحث")
           if (cancelled) return
@@ -3517,8 +3479,9 @@ export function QuranPlayer() {
             [...localResults, ...results]
               .map((result) => ({ ...result, id: result.id ?? `${result.kind ?? "verse"}-${result.verseKey}` }))
               .filter((result) => {
-                if (seen.has(result.id)) return false
-                seen.add(result.id)
+                const key = `${result.kind ?? "verse"}-${result.verseKey}`
+                if (seen.has(key)) return false
+                seen.add(key)
                 return true
               }),
             query,
@@ -3527,8 +3490,8 @@ export function QuranPlayer() {
           setQuickNavigatorResults(merged)
           setQuickNavigatorResultCount(Math.max(merged.length, (data.totalResults ?? results.length) + localResults.length))
         } catch {
-          const offline = await searchOfflineQuran(query)
           if (cancelled) return
+          const offline = await searchOfflineQuran(query)
           const merged = rankQuranSearchResults([...localResults, ...offline.results.map((result) => ({
             ...result,
             id: `verse-${result.verseKey}`,
@@ -3540,9 +3503,10 @@ export function QuranPlayer() {
         }
       }
       void runSearch()
-    }, 220)
+    }, 160)
     return () => {
       cancelled = true
+      controller.abort()
       window.clearTimeout(timer)
     }
   }, [language, preloadNavigationPage, quickNavigationData, quickNavigatorQuery])
@@ -3822,6 +3786,7 @@ export function QuranPlayer() {
   const finishQuickNavigation = (page: number, verseKey?: string) => {
     setDashboardOpen(false)
     setQuickNavigatorOpen(false)
+    setQuickSearchExpanded(false)
     setQuickNavigatorQuery("")
     moveToPage(page, verseKey)
   }
@@ -3829,6 +3794,7 @@ export function QuranPlayer() {
   const openQuickNavigator = () => {
     quickNavigatorPageRef.current = currentPage
     setQuickNavigatorPage(currentPage)
+    setQuickSearchExpanded(false)
     setQuickNavigatorOpen(true)
   }
 
@@ -7400,6 +7366,11 @@ export function QuranPlayer() {
       Math.abs(first.startPage - quickNavigatorDisplayPage) - Math.abs(second.startPage - quickNavigatorDisplayPage))
     .slice(0, 4)
     .sort((first, second) => first.startPage - second.startPage)
+  const quickNavigatorMatchStats = quickNavigatorResults.reduce((stats, result) => {
+    const group = getQuranSearchMatchGroup(result, quickNavigatorQuery)
+    stats[group] += 1
+    return stats
+  }, { direct: 0, related: 0 })
 
   const renderQuickNavigatorBrowseButton = ({
     itemKey,
@@ -7628,7 +7599,15 @@ export function QuranPlayer() {
     dashboard = false,
     section: "all" | "search" | "tracks" = "all",
   ) => (
-    <div className={cn("mx-auto flex w-full max-w-[1100px] flex-col", dashboard && section !== "tracks" && "max-w-[900px]")} dir="rtl">
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-[1100px] flex-col",
+        dashboard && section !== "tracks" && "max-w-[900px]",
+        !dashboard && quickSearchExpanded && "h-full max-w-[900px]",
+      )}
+      dir="rtl"
+      data-search-fullscreen={!dashboard && quickSearchExpanded ? "true" : undefined}
+    >
       <div className={cn("order-1 flex items-center gap-2", section === "tracks" && "hidden")}>
         <Search className="size-4 shrink-0 text-primary" aria-hidden="true" />
         <Input
@@ -7640,7 +7619,15 @@ export function QuranPlayer() {
           className={cn("min-w-0 flex-1 border-0 bg-transparent px-0 text-right shadow-none focus-visible:ring-0", dashboard ? "h-9 text-sm" : "h-10 text-base")}
         />
         {!dashboard && (
-          <Button variant="ghost" size="icon-sm" aria-label="إغلاق البحث السريع" onClick={() => setQuickNavigatorOpen(false)}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="إغلاق البحث السريع"
+            onClick={() => {
+              setQuickSearchExpanded(false)
+              setQuickNavigatorOpen(false)
+            }}
+          >
             <X />
           </Button>
         )}
@@ -7830,38 +7817,93 @@ export function QuranPlayer() {
       </div>
 
       {section !== "tracks" && quickNavigatorQuery.trim() && (
-        <div className={cn("order-2 mt-2 overflow-y-auto border-y", dashboard ? "max-h-[42dvh]" : "max-h-64")}>
-          <div className="sticky top-0 z-10 border-b bg-background/95 px-2 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur-sm">
-            {quickNavigatorResultCount > 0 ? `${quickNavigatorResultCount} نتيجة` : "لا توجد نتائج"}
-          </div>
-          {quickNavigatorResults.length > 0 ? quickNavigatorResults.slice(0, dashboard ? 12 : 10).map((result) => (
-            <button
-              key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
-              type="button"
-              className={cn("block w-full border-b text-right last:border-b-0 hover:bg-secondary/60", dashboard ? "px-2 py-2" : "px-3 py-3")}
-              data-page={result.page}
-              data-search-id={result.id}
-              data-verse-key={result.verseKey}
-              onClick={handleQuickNavigatorResultClick}
-            >
-              <span className="mb-1 block text-xs font-semibold text-primary sm:text-sm">
-                {result.title ?? `سورة ${result.surahName} · الآية ${result.ayah}`} · صفحة {result.page}
-              </span>
-              <span
-                className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", result.kind === "verse" || !result.kind ? "font-quran" : "text-sm")}
-                data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
-              >
-                {searchTextSegments(result.text, quickNavigatorQuery).map((segment, index) => (
-                  <span
-                    key={`${result.verseKey}-${index}`}
-                    className={segment.highlighted ? "rounded-sm bg-[var(--quran-highlight)]/18 px-0.5 text-foreground" : undefined}
-                  >
-                    {segment.text}
-                  </span>
+        <div className={cn(
+          "order-2 mt-2 overflow-y-auto border-y",
+          quickSearchExpanded ? "min-h-0 flex-1" : dashboard ? "max-h-[42dvh]" : "max-h-64",
+        )}>
+          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur-sm">
+            <div className="flex min-h-9 items-center justify-between gap-2 px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+              <span>{quickNavigatorResultCount > 0 ? `${quickNavigatorResultCount} نتيجة` : "لا توجد نتائج"}</span>
+              {!dashboard && quickNavigatorResults.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  aria-label={quickSearchExpanded ? "العودة إلى قائمة النتائج المصغرة" : "استعراض النتائج في صفحة كاملة"}
+                  onClick={() => setQuickSearchExpanded((expanded) => !expanded)}
+                >
+                  {quickSearchExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                  {language === "en"
+                    ? quickSearchExpanded ? "Compact view" : "Full results"
+                    : quickSearchExpanded ? "العودة للقائمة" : "عرض كامل"}
+                </Button>
+              )}
+            </div>
+            {quickSearchExpanded && (
+              <dl className="grid grid-cols-2 border-t bg-secondary/25 text-center sm:grid-cols-4" data-search-stats>
+                {([
+                  [language === "en" ? "Total" : "الإجمالي", quickNavigatorResultCount],
+                  [language === "en" ? "Shown" : "المعروض", quickNavigatorResults.length],
+                  [language === "en" ? "Direct" : "المباشر", quickNavigatorMatchStats.direct],
+                  [language === "en" ? "Related" : "ذو صلة", quickNavigatorMatchStats.related],
+                ] as const).map(([label, value]) => (
+                  <div key={label} className="border-b px-2 py-2 odd:border-l sm:border-b-0 sm:border-l sm:last:border-l-0">
+                    <dt className="text-[11px] text-muted-foreground">{label}</dt>
+                    <dd className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{value}</dd>
+                  </div>
                 ))}
-              </span>
-            </button>
-          )) : <p className="px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>}
+              </dl>
+            )}
+          </div>
+          {quickNavigatorResults.length > 0 ? (quickSearchExpanded
+            ? quickNavigatorResults
+            : quickNavigatorResults.slice(0, dashboard ? 12 : 10)).map((result, index, visibleResults) => {
+            const matchGroup = getQuranSearchMatchGroup(result, quickNavigatorQuery)
+            const previousMatchGroup = index > 0
+              ? getQuranSearchMatchGroup(visibleResults[index - 1], quickNavigatorQuery)
+              : null
+            return (
+              <div
+                key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
+                className="border-b last:border-b-0"
+                data-search-result-group={matchGroup}
+              >
+                {matchGroup !== previousMatchGroup && (
+                  <div className="border-b bg-secondary/45 px-3 py-1.5 text-xs font-semibold text-muted-foreground" data-search-group={matchGroup}>
+                    {language === "en"
+                      ? matchGroup === "direct" ? "Direct matches" : "Related results"
+                      : matchGroup === "direct" ? "تطابق مباشر" : "نتائج ذات صلة"}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={cn("block w-full text-right hover:bg-secondary/60", dashboard ? "px-2 py-2" : "px-3 py-3")}
+                  data-page={result.page}
+                  data-search-id={result.id}
+                  data-verse-key={result.verseKey}
+                  onClick={handleQuickNavigatorResultClick}
+                >
+                  <span className="mb-1 block text-xs font-semibold text-primary sm:text-sm">
+                    {result.title ?? `سورة ${result.surahName} · الآية ${result.ayah}`} · صفحة {result.page}
+                  </span>
+                  <span
+                    className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", result.kind === "verse" || !result.kind ? "font-quran" : "text-sm")}
+                    data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
+                  >
+                    {getQuranSearchHighlightSegments(result.text, quickNavigatorQuery).map((segment, segmentIndex) => (
+                      <span
+                        key={`${result.verseKey}-${segmentIndex}`}
+                        className={segment.highlighted ? "rounded-sm bg-[var(--quran-highlight)]/22 px-0.5 text-foreground" : undefined}
+                        data-search-highlight={segment.highlighted ? "true" : undefined}
+                      >
+                        {segment.text}
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              </div>
+            )
+          }) : <p className="px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مطابقة</p>}
         </div>
       )}
     </div>
@@ -9167,6 +9209,7 @@ export function QuranPlayer() {
                 if (quickNavigatorOpen && !(event.target as HTMLElement).closest("[data-quick-navigator]")) {
                   event.preventDefault()
                   event.stopPropagation()
+                  setQuickSearchExpanded(false)
                   setQuickNavigatorOpen(false)
                 }
               }}
@@ -9178,7 +9221,12 @@ export function QuranPlayer() {
             >
               {quickNavigatorOpen && !practiceActive && (
                 <div
-                  className="absolute inset-x-0 top-0 z-[35] max-h-[calc(100dvh-var(--wird-player-height,96px))] animate-in overflow-hidden border-b bg-card/97 px-3 pb-2 pt-3 shadow-xl slide-in-from-top-2 duration-200 sm:px-5"
+                  className={cn(
+                    "z-[70] animate-in overflow-hidden",
+                    quickSearchExpanded
+                      ? "fixed inset-0 h-dvh bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] duration-150 fade-in sm:px-5"
+                      : "absolute inset-x-0 top-0 max-h-[calc(100dvh-var(--wird-player-height,96px))] border-b bg-card/97 px-3 pb-2 pt-3 shadow-xl slide-in-from-top-2 duration-200 sm:px-5",
+                  )}
                   data-quick-navigator
                   dir="rtl"
                   onTouchStart={(event) => event.stopPropagation()}

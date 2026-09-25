@@ -111,8 +111,11 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   const exactPhraseQuery = "وهو العليم الحكيم"
   const exactPhraseResponse = await request.get("/api/quran/navigation", { params: { q: exactPhraseQuery } })
   expect(exactPhraseResponse.ok()).toBeTruthy()
-  const exactPhrasePayload = await exactPhraseResponse.json() as { results: Array<{ verseKey: string }> }
+  const exactPhrasePayload = await exactPhraseResponse.json() as {
+    results: Array<{ verseKey: string; matchGroup: "direct" | "related" }>
+  }
   expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.verseKey)).toEqual(["66:2", "43:84"])
+  expect(exactPhrasePayload.results.slice(0, 2).map((result) => result.matchGroup)).toEqual(["direct", "related"])
 
   await openMushaf(page)
   await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
@@ -123,6 +126,25 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   const exactPhraseVerseKeys = await page.locator('button[data-search-id^="verse-"]:visible')
     .evaluateAll((results) => results.map((result) => result.getAttribute("data-verse-key")))
   expect(exactPhraseVerseKeys.slice(0, 2)).toEqual(["66:2", "43:84"])
+  await expect(page.locator('[data-search-group="direct"]:visible')).toHaveText("تطابق مباشر")
+  await expect(page.locator('[data-search-group="related"]:visible')).toHaveText("نتائج ذات صلة")
+  const visibleGroups = await page.locator("[data-search-result-group]:visible")
+    .evaluateAll((results) => results.map((result) => result.getAttribute("data-search-result-group")))
+  expect(visibleGroups[0]).toBe("direct")
+  expect(visibleGroups.slice(1)).toContain("related")
+  const directHighlight = page.locator('button[data-verse-key="66:2"]:visible [data-search-highlight="true"]')
+  await expect(directHighlight).toHaveCount(1)
+  await expect(directHighlight).toContainText(/وَهُوَ.*ٱلْعَلِيمُ.*ٱلْحَكِيم/)
+  await expect(page.locator('button[data-verse-key="43:84"]:visible [data-search-highlight="true"]')).not.toHaveCount(0)
+
+  await page.getByRole("button", { name: "استعراض النتائج في صفحة كاملة" }).click()
+  const fullResults = page.locator('[data-search-fullscreen="true"]')
+  await expect(fullResults).toBeVisible()
+  await expect(fullResults.locator("[data-search-stats]")).toContainText("الإجمالي")
+  await expect(fullResults.locator("[data-search-stats]")).toContainText("المباشر")
+  expect(await fullResults.locator("[data-search-result-group]").count()).toBeGreaterThan(10)
+  await page.getByRole("button", { name: "العودة إلى قائمة النتائج المصغرة" }).click()
+  await expect(fullResults).toHaveCount(0)
 
   const connectedQuery = "ان الله غفور رحيم"
   const expectedConnectedVerseKeys = ["2:173", "2:182", "2:199", "5:34"]

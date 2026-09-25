@@ -1,4 +1,8 @@
-import { rankQuranSearchResults } from "@/lib/quran-search-ranking"
+import {
+  getQuranSearchMatchGroup,
+  rankQuranSearchResults,
+  type QuranSearchMatchGroup,
+} from "@/lib/quran-search-ranking"
 import { sanitizeQuranSearchText } from "@/lib/quran-search-text"
 import {
   findPage,
@@ -46,6 +50,7 @@ type NavigationSearchResult = {
   text: string
   page: number
   title: string
+  matchGroup?: QuranSearchMatchGroup
 }
 
 function normalizeArabic(value: string) {
@@ -214,6 +219,7 @@ export async function GET(request: Request) {
         ayah: verse,
         text: sanitizeQuranSearchText(data?.verse?.text_qpc_hafs ?? `الآية ${chapter}:${verse}`),
         page: findPage(chapter, verse),
+        matchGroup: "direct" as const,
       }],
       totalResults: 1,
     })
@@ -251,7 +257,11 @@ export async function GET(request: Request) {
     })
     const seen = new Set(localResults.map((result) => result.verseKey))
     const combinedResults = [...localResults, ...verseResults.filter((result) => !seen.has(result.verseKey))]
-    const results = rankQuranSearchResults(combinedResults, query).slice(0, 12)
+    const rankedResults = rankQuranSearchResults(combinedResults, query).slice(0, 50)
+    const results = rankedResults.map((result) => ({
+      ...result,
+      matchGroup: getQuranSearchMatchGroup(result, query),
+    }))
     const totalResults = (data.search?.total_results ?? verseResults.length) + localResults.length
 
     return Response.json({ results, totalResults }, {

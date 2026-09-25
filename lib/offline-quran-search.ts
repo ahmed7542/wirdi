@@ -1,5 +1,6 @@
 import { OFFLINE_PAGE_CACHE } from "@/lib/offline-audio"
 import {
+  getQuranSearchMatchScore,
   normalizeQuranSearchRankingText,
   rankQuranSearchResults,
 } from "@/lib/quran-search-ranking"
@@ -181,7 +182,7 @@ export async function searchOfflineQuran(query: string) {
       totalResults: result ? 1 : 0,
     }
   }
-  const matches = index.filter((entry) => entry.normalizedText.includes(normalizedQuery))
+  const matches = index.filter((entry) => getQuranSearchMatchScore(entry, query) > 0)
   const rankedMatches = rankQuranSearchResults(matches, query)
   return {
     results: rankedMatches.slice(0, 20).map(({ normalizedText: _normalizedText, ...entry }) => entry),
