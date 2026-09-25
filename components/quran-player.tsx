@@ -572,6 +572,7 @@ const CONTINUOUS_SCROLL_SPEED_PRESETS = [0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 
 const READING_PAGE_RETRY_DELAYS_MS = [120, 300, 700] as const
 const SPEED_LONG_PRESS_MS = 480
 const PAGE_SWIPE_SETTLE_MS = 220
+const READER_CHROME_TRANSITION_MS = 360
 const FULLSCREEN_ORIENTATION_CONTROL_MS = 4_500
 const RECITER_STORAGE_KEY = "wird-reciter"
 const FAVORITES_STORAGE_KEY = "wird-favorite-reciters"
@@ -1082,6 +1083,10 @@ export function QuranPlayer() {
   const wheelPageLockRef = useRef(false)
   const speedClickSuppressionUntilRef = useRef(0)
   const fullscreenOrientationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const readerChromeTransitionTimerRef = useRef<number | null>(null)
+  const readerChromeFrameRef = useRef<number | null>(null)
+  const readerChromeNestedFrameRef = useRef<number | null>(null)
+  const fullscreenExitInProgressRef = useRef(false)
   const fullscreenPhysicalOrientationRef = useRef<PhysicalOrientation | null>(null)
   const acceptedOrientationRef = useRef<PhysicalOrientation>("portrait")
   const lastOfferedOrientationRef = useRef<PhysicalOrientation | null>(null)
@@ -1248,6 +1253,7 @@ export function QuranPlayer() {
   const [readerChromeVisible, setReaderChromeVisible] = useState(true)
 
   const readerFocusActive = quietMode && !readerChromeVisible
+  const readerChromeState = readerFocusActive ? "hidden" : quietMode ? "revealing" : "visible"
   const landscapeFullscreenPlayer = isFullscreen && landscapeReadingMode && !practiceActive
   const fullscreenLineReading = landscapeFullscreenPlayer && viewMode === "text" && readingMode === "page"
   const adaptivePageSpacing = viewMode === "text" && readingMode === "page" && lineSpacing !== "normal"
@@ -1777,13 +1783,53 @@ export function QuranPlayer() {
     return () => controller.abort()
   }, [boundedSessionActive, extendedSpeedOpen, reciter, sessionEnd, sessionEndVerseKey, sessionStart, sessionStartVerseKey, settingsLoaded])
 
+  const cancelReaderChromeTransition = useCallback(() => {
+    if (readerChromeTransitionTimerRef.current) window.clearTimeout(readerChromeTransitionTimerRef.current)
+    if (readerChromeFrameRef.current !== null) window.cancelAnimationFrame(readerChromeFrameRef.current)
+    if (readerChromeNestedFrameRef.current !== null) window.cancelAnimationFrame(readerChromeNestedFrameRef.current)
+    readerChromeTransitionTimerRef.current = null
+    readerChromeFrameRef.current = null
+    readerChromeNestedFrameRef.current = null
+  }, [])
+
+  const concealReaderChrome = useCallback(() => {
+    cancelReaderChromeTransition()
+    setQuietMode(true)
+    setReaderChromeVisible(true)
+    readerChromeFrameRef.current = window.requestAnimationFrame(() => {
+      readerChromeFrameRef.current = null
+      readerChromeNestedFrameRef.current = window.requestAnimationFrame(() => {
+        readerChromeNestedFrameRef.current = null
+        setReaderChromeVisible(false)
+      })
+    })
+  }, [cancelReaderChromeTransition])
+
+  const revealReaderChrome = useCallback((restorePanels = true) => {
+    cancelReaderChromeTransition()
+    setReaderChromeVisible(true)
+    readerChromeFrameRef.current = window.requestAnimationFrame(() => {
+      readerChromeFrameRef.current = null
+      readerChromeNestedFrameRef.current = window.requestAnimationFrame(() => {
+        readerChromeNestedFrameRef.current = null
+        readerChromeTransitionTimerRef.current = window.setTimeout(() => {
+          readerChromeTransitionTimerRef.current = null
+          setQuietMode(false)
+          if (restorePanels) {
+            setNavigationOpen(chromePanelsRef.current.navigation)
+            setSessionSettingsOpen(chromePanelsRef.current.session)
+            setMobileMarksOpen(chromePanelsRef.current.marks)
+          }
+        }, READER_CHROME_TRANSITION_MS)
+      })
+    })
+  }, [cancelReaderChromeTransition])
+
+  useEffect(() => () => cancelReaderChromeTransition(), [cancelReaderChromeTransition])
+
   const toggleReaderChrome = () => {
     if (readerFocusActive) {
-      setQuietMode(false)
-      setReaderChromeVisible(true)
-      setNavigationOpen(chromePanelsRef.current.navigation)
-      setSessionSettingsOpen(chromePanelsRef.current.session)
-      setMobileMarksOpen(chromePanelsRef.current.marks)
+      revealReaderChrome()
       return
     }
     chromePanelsRef.current = {
@@ -1795,8 +1841,7 @@ export function QuranPlayer() {
     setNavigationOpen(false)
     setSessionSettingsOpen(false)
     setMobileMarksOpen(false)
-    setQuietMode(true)
-    setReaderChromeVisible(false)
+    concealReaderChrome()
   }
 
   const persistVerseHighlights = (next: VerseHighlight[]) => {
@@ -3658,14 +3703,12 @@ export function QuranPlayer() {
       }
       if (!document.fullscreenEnabled) return
       setIsFullscreen(false)
-      setQuietMode(false)
-      setReaderChromeVisible(true)
-      setNavigationOpen(chromePanelsRef.current.navigation)
-      setSessionSettingsOpen(chromePanelsRef.current.session)
+      if (fullscreenExitInProgressRef.current) return
+      revealReaderChrome()
     }
     document.addEventListener("fullscreenchange", handleFullscreenChange)
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange)
-  }, [])
+  }, [revealReaderChrome])
 
   useEffect(() => {
     if (!isFullscreen) return
@@ -4543,17 +4586,16 @@ export function QuranPlayer() {
 
   const toggleFullscreen = async () => {
     if (readerFocusActive || isFullscreen || document.fullscreenElement) {
+      fullscreenExitInProgressRef.current = true
+      revealReaderChrome()
+      setIsFullscreen(false)
       try {
         if (document.fullscreenElement) await document.exitFullscreen()
       } catch {
-        // The in-app fallback still exits below.
+        // The in-app fallback still exits through the same chrome transition.
+      } finally {
+        fullscreenExitInProgressRef.current = false
       }
-      setIsFullscreen(false)
-      setQuietMode(false)
-      setReaderChromeVisible(true)
-      setNavigationOpen(chromePanelsRef.current.navigation)
-      setSessionSettingsOpen(chromePanelsRef.current.session)
-      setMobileMarksOpen(chromePanelsRef.current.marks)
       return
     }
 
@@ -4567,8 +4609,7 @@ export function QuranPlayer() {
     setNavigationOpen(false)
     setSessionSettingsOpen(false)
     setMobileMarksOpen(false)
-    setQuietMode(true)
-    setReaderChromeVisible(false)
+    concealReaderChrome()
     setSpreadMode("single")
     try {
       if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
@@ -4592,8 +4633,7 @@ export function QuranPlayer() {
     setNavigationOpen(false)
     setSessionSettingsOpen(false)
     setMobileMarksOpen(false)
-    setQuietMode(true)
-    setReaderChromeVisible(false)
+    concealReaderChrome()
     setSpreadMode("single")
     try {
       if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
@@ -4608,14 +4648,18 @@ export function QuranPlayer() {
 
   const leaveRecitationFullscreen = () => {
     chromePanelsRef.current = { navigation: false, session: false, marks: false }
+    fullscreenExitInProgressRef.current = true
+    revealReaderChrome(false)
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {
         // The in-app fullscreen state still exits below.
+      }).finally(() => {
+        fullscreenExitInProgressRef.current = false
       })
+    } else {
+      fullscreenExitInProgressRef.current = false
     }
     setIsFullscreen(false)
-    setQuietMode(false)
-    setReaderChromeVisible(true)
   }
 
   const handleImageCenterTap = (event: MouseEvent<HTMLDivElement>) => {
@@ -7839,10 +7883,12 @@ export function QuranPlayer() {
       >
         <header
           ref={headerShellRef}
+          data-reader-chrome="header"
+          data-reader-chrome-state={readerChromeState}
           className={cn(
-            "top-0 z-30 border-b bg-card/95 backdrop-blur transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none",
+            "top-0 z-30 translate-y-0 border-b bg-card/95 opacity-100 backdrop-blur will-change-[translate,opacity] transition-[translate,opacity] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             quietMode ? "fixed inset-x-0" : "sticky",
-            readerFocusActive && "pointer-events-none -translate-y-full opacity-0",
+            readerFocusActive && "pointer-events-none -translate-y-[calc(100%+0.5rem)] opacity-0",
           )}
         >
           {!dashboardOpen && <h1 className="sr-only">المصحف الشريف</h1>}
@@ -9474,10 +9520,14 @@ export function QuranPlayer() {
         <footer
           ref={playerShellRef}
           data-quran-player
+          data-reader-chrome="player"
+          data-reader-chrome-state={readerFocusActive
+            ? !landscapeFullscreenPlayer && !playerCollapsed ? "hidden" : "visible"
+            : readerChromeState}
           aria-label="مشغل تلاوة القرآن"
           className={cn(
-            "fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 shadow-[0_-8px_24px_rgba(28,45,38,0.08)] backdrop-blur transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none",
-            readerFocusActive && !landscapeFullscreenPlayer && !playerCollapsed && "pointer-events-none translate-y-full opacity-0",
+            "fixed inset-x-0 bottom-0 z-40 translate-y-0 border-t bg-card/95 opacity-100 shadow-[0_-8px_24px_rgba(28,45,38,0.08)] backdrop-blur will-change-[translate,opacity] transition-[translate,opacity] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+            readerFocusActive && !landscapeFullscreenPlayer && !playerCollapsed && "pointer-events-none translate-y-[calc(100%+0.5rem)] opacity-0",
             landscapeFullscreenPlayer && "z-[60]",
             playerCollapsed && "h-[12px] border-t-0 bg-transparent shadow-none backdrop-blur-none",
             (practiceActive || dashboardOpen) && "hidden",

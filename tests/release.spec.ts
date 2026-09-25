@@ -500,15 +500,38 @@ test("يجعل تلاوة الآية الإجراء الأساسي في قائم
 test("يخفي الواجهة ويكبر صفحة المصحف بانتقال خفيف عند ضغط الوسط", async ({ page }) => {
   await openMushaf(page)
   const header = page.getByRole("banner")
-  await expect(header).toHaveCSS("transition-duration", "0.3s")
+  await expect(header).toHaveCSS("transition-duration", "0.36s")
+  await expect(header).toHaveCSS("transition-timing-function", "cubic-bezier(0.22, 1, 0.36, 1)")
   const mushafPage = page.locator("[data-quran-text-page]").first()
   const bounds = await mushafPage.boundingBox()
   if (!bounds) throw new Error("تعذر قياس صفحة المصحف")
 
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
   await expect(page.getByRole("button", { name: "العودة إلى واجهة المصحف" })).toBeVisible()
+  await expect(header).toHaveAttribute("data-reader-chrome-state", "hidden")
+  await expect(page.locator('[data-reader-chrome="player"]')).toHaveAttribute("data-reader-chrome-state", "hidden")
   await expect(header).toHaveCSS("opacity", "0")
   await expect(page.locator("[data-reader-page-shell]")).toHaveCSS("transition-duration", "0.3s")
+
+  await page.evaluate(() => {
+    const states: string[] = []
+    document.querySelectorAll<HTMLElement>("[data-reader-chrome]").forEach((element) => {
+      const observer = new MutationObserver(() => {
+        states.push(`${element.dataset.readerChrome}:${element.dataset.readerChromeState}`)
+      })
+      observer.observe(element, { attributes: true, attributeFilter: ["data-reader-chrome-state"] })
+    })
+    Object.assign(window, { __wirdReaderChromeStates: states })
+  })
+  await page.getByRole("button", { name: "العودة إلى واجهة المصحف" }).click()
+  const transitionStates = await page.evaluate(() => (
+    window as typeof window & { __wirdReaderChromeStates: string[] }
+  ).__wirdReaderChromeStates)
+  expect(transitionStates).toContain("header:revealing")
+  expect(transitionStates).toContain("player:revealing")
+  await expect(header).toHaveCSS("opacity", "1")
+  await expect(header).toHaveAttribute("data-reader-chrome-state", "visible")
+  await expect(page.locator('[data-reader-chrome="player"]')).toHaveAttribute("data-reader-chrome-state", "visible")
 })
 
 test("يقترح اتجاه الجهاز ولا يطبقه إلا بعد الضغط", async ({ page }) => {
