@@ -51,8 +51,14 @@ export const metadata: Metadata = {
   description: "تطبيق لمراجعة القرآن الكريم وحفظه.",
   applicationName: "وِردي",
   icons: {
-    icon: "/icons/wird-192.png",
-    apple: "/icons/wird-192.png",
+    icon: [
+      { url: "/icons/wird-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/wird-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: [
+      { url: "/icons/wird-180.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   appleWebApp: {
     capable: true,

@@ -1,5 +1,5 @@
 const RELEASE = new URL(self.location.href).searchParams.get("release") || "base"
-const VERSION = `wird-v48-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
+const VERSION = `wird-v49-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
 const STATIC_CACHE = `${VERSION}-static`
 const PAGE_CACHE = `${VERSION}-pages`
 const QURAN_CACHE = "wird-quran-v1"
@@ -11,6 +11,7 @@ const PRECACHE_STATIC = [
   "/manifest.webmanifest",
   "/icons/wird-192.png",
   "/icons/wird-512.png",
+  "/icons/wird-maskable-512.png",
   "/fonts/IBMPlexSansArabic-Regular.ttf",
 ]
 

@@ -8120,10 +8120,18 @@ export function QuranPlayer() {
                 }}
               >
                 <span className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground sm:size-10",
+                  "relative size-9 shrink-0 overflow-hidden rounded-md sm:size-10",
                   compactPlaybackChrome && "sm:size-8",
                 )}>
-                  <BookOpen className={cn("size-[18px] sm:size-5", compactPlaybackChrome && "sm:size-4")} />
+                  <Image
+                    src="/icons/wird-192.png"
+                    alt=""
+                    fill
+                    sizes={compactPlaybackChrome ? "32px" : "40px"}
+                    className="object-cover"
+                    data-app-icon
+                    priority
+                  />
                 </span>
                 {dashboardOpen && <span className="truncate text-xs font-semibold sm:text-sm">وِرد</span>}
               </button>

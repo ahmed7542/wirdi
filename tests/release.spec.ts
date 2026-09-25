@@ -1290,6 +1290,27 @@ test("يوزع مشغل الهاتف ويغير موضع سهم الطي", async
   }).toBeLessThanOrEqual(1)
 })
 
+test("يعتمد أيقونة وردي في الرأس والتثبيت والأقنعة", async ({ page, request }) => {
+  const manifestResponse = await request.get("/manifest.webmanifest")
+  expect(manifestResponse.ok()).toBeTruthy()
+  const manifest = await manifestResponse.json() as {
+    icons: Array<{ src: string; sizes: string; purpose?: string }>
+  }
+  expect(manifest.icons).toEqual(expect.arrayContaining([
+    expect.objectContaining({ src: "/icons/wird-192.png", sizes: "192x192", purpose: "any" }),
+    expect.objectContaining({ src: "/icons/wird-512.png", sizes: "512x512", purpose: "any" }),
+    expect.objectContaining({ src: "/icons/wird-maskable-512.png", sizes: "512x512", purpose: "maskable" }),
+  ]))
+
+  await openMushaf(page)
+  const appIcon = page.locator("[data-app-icon]")
+  await expect(appIcon).toBeVisible()
+  await expect.poll(() => appIcon.evaluate((image: HTMLImageElement) => ({
+    complete: image.complete,
+    square: image.naturalWidth > 0 && image.naturalWidth === image.naturalHeight,
+  }))).toEqual({ complete: true, square: true })
+})
+
 test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ request }) => {
   const [workerResponse, pageResponse] = await Promise.all([
     request.get("/sw.js"),
@@ -1299,7 +1320,7 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
-  expect(workerSource).toContain('VERSION = `wird-v48-')
+  expect(workerSource).toContain('VERSION = `wird-v49-')
   expect(workerSource).toContain('QURAN_CACHE = "wird-quran-v1"')
   expect(workerSource).toContain("matchCachedStaticAsset")
   expect(workerSource).toContain("APP_CACHE_GENERATIONS = 3")
