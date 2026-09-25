@@ -4254,10 +4254,13 @@ export function QuranPlayer() {
   }
 
   const startSavedSession = (session: SavedSessionPreset | SessionHistoryItem) => {
-    const targetPage = "currentPage" in session ? session.currentPage : session.startPage
-    const targetVerseKey = "currentVerseKey" in session
-      ? session.currentVerseKey
-      : session.startVerseKey
+    const previousListeningSession = "currentPage" in session && session.mode === "listen"
+    const targetPage = previousListeningSession
+      ? session.startPage
+      : "currentPage" in session ? session.currentPage : session.startPage
+    const targetVerseKey = previousListeningSession
+      ? session.startVerseKey
+      : "currentVerseKey" in session ? session.currentVerseKey : session.startVerseKey
     setSessionNavigationRange({
       startPage: session.startPage,
       endPage: session.endPage,

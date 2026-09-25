@@ -949,6 +949,45 @@ test("يوضح أن تذكير الختمة يعمل داخل التطبيق", a
   await expect(page.getByText("تذكير يومي داخل التطبيق", { exact: true })).toBeVisible()
 })
 
+test("يعيد جلسة الاستماع السابقة من بداية نطاقها لا من آخر موضع", async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = Date.now()
+    window.localStorage.setItem("wird-session-history-v1", JSON.stringify([{
+      id: "previous-listening-session",
+      mode: "listen",
+      startPage: 120,
+      endPage: 122,
+      currentPage: 122,
+      reciter: 6,
+      reciterName: "ماهر المعيقلي",
+      repeatTarget: "1",
+      ayahRepeatEnabled: false,
+      ayahRepeatCount: 3,
+      ayahPauseSeconds: 1,
+      startedAt: now - 60_000,
+      updatedAt: now,
+      completed: false,
+    }]))
+  })
+
+  await openMushaf(page)
+  await page.getByRole("button", { name: "أدوات القراءة" }).click()
+  await page.getByRole("radio", { name: "استماع" }).click()
+  const previousSession = page.getByRole("button", { name: /من صفحة 120 إلى صفحة 122/ })
+  await expect(previousSession).toBeVisible()
+  await previousSession.click()
+
+  await expect(page.getByLabel("صفحة 120 من المصحف الشريف")).toBeVisible()
+  await expect.poll(() => page.evaluate(() => {
+    const sessions = JSON.parse(window.localStorage.getItem("wird-session-history-v1") ?? "[]")
+    return sessions.find((session: { id: string }) => session.id !== "previous-listening-session")?.currentPage
+  })).toBe(120)
+  expect(await page.evaluate(() => {
+    const sessions = JSON.parse(window.localStorage.getItem("wird-session-history-v1") ?? "[]")
+    return sessions.find((session: { id: string }) => session.id === "previous-listening-session")?.currentPage
+  })).toBe(122)
+})
+
 test("يحمل أدوات الجلسة ومحدد النطاق عند الطلب", async ({ page }) => {
   await openMushaf(page)
   await page.getByRole("button", { name: "أدوات القراءة" }).click()
