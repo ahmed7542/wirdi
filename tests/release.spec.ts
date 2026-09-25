@@ -5,6 +5,7 @@ import { PDFDocument, PDFName, PDFRawStream } from "pdf-lib"
 
 import {
   getQuranSearchMatchGroup,
+  normalizeQuranSearchRankingText,
   rankQuranSearchResults,
 } from "../lib/quran-search-ranking"
 
@@ -14,6 +15,12 @@ test("يصنف اللواصق كتطابق مباشر ويرتب الصلة حس
   expect(getQuranSearchMatchGroup(attachedResult, "هو العليم الحكيم")).toBe("direct")
   expect(getQuranSearchMatchGroup({ verseKey: "1:3", text: "هُوَ ٱلْعَلِيمُ ٱلْحَكِيمُ" }, "وهو العليم الحكيم")).toBe("related")
   expect(getQuranSearchMatchGroup(prefixedResult, "ان الله غفور رحيم")).toBe("direct")
+  const creationVerse = "ٱلْحَمْدُ لِلَّهِ ٱلَّذِى خَلَقَ ٱلسَّمَـٰوَٰتِ وَٱلْأَرْضَ وَجَعَلَ ٱلظُّلُمَـٰتِ وَٱلنُّورَ"
+  expect(normalizeQuranSearchRankingText(creationVerse)).toBe("الحمد لله الذي خلق السماوات والارض وجعل الظلمات والنور")
+  expect(getQuranSearchMatchGroup({
+    verseKey: "6:1",
+    text: creationVerse,
+  }, "خلق السماوات والارض")).toBe("direct")
   expect(getQuranSearchMatchGroup(attachedResult, "هو العليم الحكييم")).toBe("related")
 
   const query = "الله غفور رحيم"
@@ -207,6 +214,34 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   expect(connectedVerseKeys.slice(0, 4)).toEqual(expectedConnectedVerseKeys)
 })
 
+test("يقدم الإجراء اليومي وينظم العلامات الكثيرة في لوحة وِرد", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wird-bookmarks", JSON.stringify([
+      { id: "mark-1", page: 1, verseKey: "1:1", chapterId: 1, chapterName: "الفاتحة", positionMs: 0, reciter: 6, createdAt: 6 },
+      { id: "mark-2", page: 2, verseKey: "2:1", chapterId: 2, chapterName: "البقرة", positionMs: 0, reciter: 6, createdAt: 5 },
+      { id: "mark-3", page: 50, verseKey: "3:1", chapterId: 3, chapterName: "آل عمران", positionMs: 0, reciter: 6, createdAt: 4 },
+      { id: "mark-4", page: 77, verseKey: "4:1", chapterId: 4, chapterName: "النساء", positionMs: 0, reciter: 6, createdAt: 3 },
+      { id: "mark-5", page: 106, verseKey: "5:1", chapterId: 5, chapterName: "المائدة", positionMs: 0, reciter: 6, createdAt: 2 },
+      { id: "mark-6", page: 604, verseKey: "112:1", chapterId: 112, chapterName: "الإخلاص", positionMs: 0, reciter: 6, createdAt: 1 },
+    ]))
+  })
+  await openMushaf(page)
+  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+
+  const today = page.locator('[data-dashboard-section="today"]')
+  const plans = page.locator('[data-dashboard-section="plans"]')
+  await expect(today).toBeVisible()
+  expect(await today.evaluate((element) => element.getBoundingClientRect().top))
+    .toBeLessThan(await plans.evaluate((element) => element.getBoundingClientRect().top))
+
+  await expect(page.locator("[data-dashboard-bookmark]")).toHaveCount(5)
+  await page.getByRole("button", { name: "عرض كل العلامات (6)" }).click()
+  await expect(page.locator("[data-dashboard-bookmark]")).toHaveCount(6)
+  await page.getByLabel("البحث في علامات الوقوف").fill("الإخلاص")
+  await expect(page.locator("[data-dashboard-bookmark]")).toHaveCount(1)
+  await expect(page.locator("[data-dashboard-bookmark]")).toContainText("سورة الإخلاص")
+})
+
 test("يعرض المصحف دون أخطاء أو تجاوز أفقي", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
@@ -227,8 +262,22 @@ test("يبحث عن آية الكرسي بالاسم الشائع وينتقل �
   await openMushaf(page)
   await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
   await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').first().fill("آية الكرسي")
-  await page.locator('button[data-verse-key="2:255"]').click()
+
+  const contextToggle = page.locator('[data-search-context-toggle="2:255"]:visible')
+  await expect(contextToggle).toBeVisible()
+  await contextToggle.click()
+  const context = page.locator('[data-search-context="2:255"]:visible')
+  await expect(context.getByText("الآية السابقة · 2:254", { exact: true })).toBeVisible()
+  await expect(context.getByText("الآية التالية · 2:256", { exact: true })).toBeVisible()
+  await expect(context.locator("[data-quran-content]")).toHaveCount(2)
+
+  await page.locator('button[data-verse-key="2:255"]:visible').click()
   await expect(page.getByLabel("صفحة 42 من المصحف الشريف")).toBeVisible()
+  const returnButton = page.getByRole("button", { name: "العودة إلى موضعك السابق" })
+  await expect(returnButton).toHaveAttribute("data-reading-return-source", "search")
+  await returnButton.click()
+  await expect(page.getByLabel("صفحة 1 من المصحف الشريف")).toBeVisible()
+  await expect(returnButton).toHaveCount(0)
 })
 
 test("يوحد فئات التنقل أسفل بحث المصحف دون قسم منفصل", async ({ page }) => {
@@ -421,7 +470,7 @@ test("لا يعرض إشعار القارئ عند التنقل دون تشغي�
   await expect(page.getByText(/تسجيل القارئ|مصدر تلاوة القارئ|تعذر تحميل التلاوة/)).toHaveCount(0)
 })
 
-test("يوضح منتقي الموضع ويرتب الخطط والمتشابهات قبل اليوم", async ({ page }) => {
+test("يوضح منتقي الموضع ويقدم إجراء اليوم قبل الخطط", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.removeItem("wird-khatma-plan-v1")
     window.localStorage.removeItem("wird-learning-plan-v1")
@@ -437,7 +486,7 @@ test("يوضح منتقي الموضع ويرتب الخطط والمتشابه�
   await expect(page.getByRole("button", { name: /^خطط الحفظ والمراجعة/ })).toBeVisible()
   await expect(page.getByRole("button", { name: /^المتشابهات/ })).toBeVisible()
   await expect(today).toBeVisible()
-  expect((await plans.boundingBox())!.y).toBeLessThan((await today.boundingBox())!.y)
+  expect((await today.boundingBox())!.y).toBeLessThan((await plans.boundingBox())!.y)
   await expect(page.getByRole("button", { name: "أنشئ خطة", exact: true })).toBeVisible()
 
   await picker.click()

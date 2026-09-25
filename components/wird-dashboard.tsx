@@ -18,6 +18,7 @@ import {
   Mic,
   Play,
   RotateCcw,
+  Search,
   Target,
   Trash2,
 } from "lucide-react"
@@ -40,6 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import type { VerseHighlight } from "@/components/quran-page"
 import {
   loadReadingStats,
@@ -166,10 +168,18 @@ export function WirdDashboard({
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null)
   const [activeSection, setActiveSection] = useState<"home" | "mutashabihat">("home")
   const [pendingBookmarkDeletion, setPendingBookmarkDeletion] = useState<DashboardBookmark | null>(null)
+  const [reviewQuery, setReviewQuery] = useState("")
+  const [bookmarkQuery, setBookmarkQuery] = useState("")
+  const [showAllReviews, setShowAllReviews] = useState(false)
+  const [showAllBookmarks, setShowAllBookmarks] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setActiveSection("home")
+      setReviewQuery("")
+      setBookmarkQuery("")
+      setShowAllReviews(false)
+      setShowAllBookmarks(false)
       return
     }
     const refresh = () => {
@@ -254,6 +264,24 @@ export function WirdDashboard({
   const learningPlanEntries = learningPlans.map((plan) => ({ plan, status: getLearningPlanStatus(plan) }))
   const activeLearningPlan = learningPlanEntries.find(({ status }) => status.activeToday && status.todayAyahs > 0)
   const memorizationPlan = learningPlanEntries.find(({ plan }) => plan.type === "new")
+  const normalizedReviewQuery = reviewQuery.trim().toLocaleLowerCase("ar")
+  const filteredReviews = normalizedReviewQuery
+    ? reviews.filter((highlight) => (
+        highlight.verseKey.includes(normalizedReviewQuery) ||
+        highlight.chapterName?.toLocaleLowerCase("ar").includes(normalizedReviewQuery) ||
+        highlight.verseText?.toLocaleLowerCase("ar").includes(normalizedReviewQuery)
+      ))
+    : reviews
+  const normalizedBookmarkQuery = bookmarkQuery.trim().toLocaleLowerCase("ar")
+  const filteredBookmarks = normalizedBookmarkQuery
+    ? bookmarks.filter((bookmark) => (
+        bookmark.verseKey.includes(normalizedBookmarkQuery) ||
+        bookmark.chapterName?.toLocaleLowerCase("ar").includes(normalizedBookmarkQuery) ||
+        String(bookmark.page).includes(normalizedBookmarkQuery)
+      ))
+    : bookmarks
+  const visibleReviews = showAllReviews ? filteredReviews : filteredReviews.slice(0, 8)
+  const visibleBookmarks = showAllBookmarks ? filteredBookmarks : filteredBookmarks.slice(0, 5)
 
   const nextActivity = activeLearningPlan
     ? {
@@ -281,7 +309,7 @@ export function WirdDashboard({
             : { label: "أنشئ خطة", run: onOpenLearningPlan }
 
   const todaySection = (
-    <section className="border-t py-7">
+    <section className="border-t py-7" data-dashboard-section="today">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="font-bold">اليوم</h2>
@@ -325,7 +353,9 @@ export function WirdDashboard({
       </section>
 
       <div className="px-3 sm:px-0">
-      <section className="border-t py-6">
+      {todaySection}
+
+      <section className="border-t py-6" data-dashboard-section="plans">
         <div className="mb-4">
           <h2 className="font-bold">الخطط</h2>
           <p className="text-sm text-muted-foreground">مقرر الختمة والحفظ والمراجعة</p>
@@ -376,8 +406,6 @@ export function WirdDashboard({
         </div>
       </section>
 
-      {todaySection}
-
       <section className="border-t py-7">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -386,14 +414,31 @@ export function WirdDashboard({
           </div>
           <Badge variant={reviews.length ? "default" : "secondary"}>{reviews.length} موضع</Badge>
         </div>
+        {reviews.length > 4 && (
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={reviewQuery}
+              className="ps-9"
+              placeholder="ابحث في مواضع المراجعة"
+              aria-label="البحث في مواضع المراجعة"
+              onChange={(event) => {
+                setReviewQuery(event.target.value)
+                setShowAllReviews(false)
+              }}
+            />
+          </div>
+        )}
         {reviews.length === 0 ? (
           <div className="flex items-center gap-2 border-y py-5 text-sm text-muted-foreground">
             <CheckCircle2 className="size-4 text-primary" />
             لا توجد مواضع مستحقة اليوم
           </div>
+        ) : filteredReviews.length === 0 ? (
+          <p className="border-y py-6 text-center text-sm text-muted-foreground">لا توجد مواضع مراجعة مطابقة</p>
         ) : (
           <div className="divide-y border-y">
-            {reviews.slice(0, 8).map((highlight) => {
+            {visibleReviews.map((highlight) => {
               const verseNumber = highlight.verseKey.split(":")[1]
               const highlightedWords = getHighlightedWords(highlight)
               return (
@@ -441,19 +486,49 @@ export function WirdDashboard({
             })}
           </div>
         )}
+        {filteredReviews.length > 8 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 w-full"
+            onClick={() => setShowAllReviews((visible) => !visible)}
+          >
+            {showAllReviews ? <ChevronUp /> : <ChevronDown />}
+            {showAllReviews ? "عرض أقل" : `عرض كل مواضع المراجعة (${filteredReviews.length})`}
+          </Button>
+        )}
       </section>
 
       <section className="border-t py-7">
         <div>
           <div className="mb-4">
             <h2 className="font-bold">علامات الوقوف</h2>
-            <p className="text-sm text-muted-foreground">أقرب مواضع محفوظة</p>
+            <p className="text-sm text-muted-foreground">مواضعك المحفوظة مرتبة كما اخترتها</p>
           </div>
+          {bookmarks.length > 4 && (
+            <div className="relative mb-3">
+              <Search className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={bookmarkQuery}
+                className="ps-9"
+                placeholder="ابحث بالسورة أو الآية أو الصفحة"
+                aria-label="البحث في علامات الوقوف"
+                onChange={(event) => {
+                  setBookmarkQuery(event.target.value)
+                  setShowAllBookmarks(false)
+                }}
+              />
+            </div>
+          )}
           <div className="divide-y border-y">
             {bookmarks.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">لا توجد علامات محفوظة</p>
-            ) : bookmarks.slice(0, 5).map((bookmark, bookmarkIndex) => (
-              <div key={bookmark.id} className="flex items-center gap-1">
+            ) : filteredBookmarks.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">لا توجد علامات مطابقة</p>
+            ) : visibleBookmarks.map((bookmark) => {
+              const bookmarkIndex = bookmarks.findIndex((item) => item.id === bookmark.id)
+              return (
+              <div key={bookmark.id} className="flex items-center gap-1" data-dashboard-bookmark={bookmark.id}>
                 <div className="grid shrink-0 grid-rows-2" aria-label={`ترتيب علامة الآية ${bookmark.verseKey}`}>
                   <Button
                     variant="ghost"
@@ -500,8 +575,20 @@ export function WirdDashboard({
                   <Trash2 />
                 </Button>
               </div>
-            ))}
+              )
+            })}
           </div>
+          {filteredBookmarks.length > 5 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-2 w-full"
+              onClick={() => setShowAllBookmarks((visible) => !visible)}
+            >
+              {showAllBookmarks ? <ChevronUp /> : <ChevronDown />}
+              {showAllBookmarks ? "عرض أقل" : `عرض كل العلامات (${filteredBookmarks.length})`}
+            </Button>
+          )}
         </div>
       </section>
 

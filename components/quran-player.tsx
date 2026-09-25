@@ -394,6 +394,7 @@ type TafsirTarget = {
 type ReadingReturnLocation = {
   page: number
   verseKey?: string
+  source: "search" | "navigation" | "bookmark" | "review" | "mutashabihat"
 }
 
 type QuickNavigationData = QuranSearchNavigationData
@@ -408,6 +409,18 @@ type QuickNavigatorResult = {
   page: number
   title?: string
   matchGroup?: QuranSearchMatchGroup
+}
+
+type QuickSearchContext = {
+  key: string
+  loading: boolean
+  previous?: QuranVerse
+  next?: QuranVerse
+  error?: string
+}
+
+function getQuickResultKey(result: QuickNavigatorResult) {
+  return result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`
 }
 
 function localQuickNavigationSearch(
@@ -1032,6 +1045,7 @@ export function QuranPlayer() {
   const pageRequestRef = useRef(new Map<string, Promise<LoadedPage>>())
   const readingPageCacheRef = useRef(new Map<number, LoadedPage>())
   const readingPageRequestRef = useRef(new Map<number, Promise<LoadedPage>>())
+  const quickSearchContextRequestRef = useRef(0)
   const imagePageCacheRef = useRef(new Set<number>())
   const previousVolumeRef = useRef(1)
   const speedRef = useRef(1)
@@ -1169,6 +1183,7 @@ export function QuranPlayer() {
   const [quickNavigatorQuery, setQuickNavigatorQuery] = useState("")
   const [quickNavigatorBrowseTab, setQuickNavigatorBrowseTab] = useState<QuickNavigatorBrowseTab>("nearby")
   const [quickNavigatorResults, setQuickNavigatorResults] = useState<QuickNavigatorResult[]>([])
+  const [quickSearchContext, setQuickSearchContext] = useState<QuickSearchContext | null>(null)
   const [quickShowRelatedResults, setQuickShowRelatedResults] = useState(false)
   const [quickNavigationData, setQuickNavigationData] = useState<QuickNavigationData | null>(null)
   const [quickNavigatorPage, setQuickNavigatorPage] = useState(currentPage)
@@ -2823,6 +2838,53 @@ export function QuranPlayer() {
     return request
   }, [])
 
+  const loadQuickSearchContext = useCallback(async (result: QuickNavigatorResult) => {
+    const key = getQuickResultKey(result)
+    if (quickSearchContext?.key === key) {
+      quickSearchContextRequestRef.current += 1
+      setQuickSearchContext(null)
+      return
+    }
+
+    const revealContext = () => {
+      window.requestAnimationFrame(() => {
+        const context = [...document.querySelectorAll<HTMLElement>("[data-search-context]")]
+          .find((element) => element.dataset.searchContext === result.verseKey && element.offsetParent !== null)
+        context?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+      })
+    }
+    const requestId = quickSearchContextRequestRef.current + 1
+    quickSearchContextRequestRef.current = requestId
+    setQuickSearchContext({ key, loading: true })
+    revealContext()
+
+    try {
+      const current = await requestReadingPage(result.page, reciter)
+      const targetIndex = current.verses.findIndex((verse) => verse.verseKey === result.verseKey)
+      if (targetIndex < 0) throw new Error("تعذر العثور على الآية في الصفحة")
+
+      let previous = current.verses[targetIndex - 1]
+      let next = current.verses[targetIndex + 1]
+      const [previousPage, nextPage] = await Promise.all([
+        !previous && result.page > 1
+          ? requestReadingPage(result.page - 1, reciter).catch(() => null)
+          : Promise.resolve(null),
+        !next && result.page < MAX_PAGE
+          ? requestReadingPage(result.page + 1, reciter).catch(() => null)
+          : Promise.resolve(null),
+      ])
+      previous ??= previousPage?.verses.at(-1)
+      next ??= nextPage?.verses[0]
+      if (quickSearchContextRequestRef.current !== requestId) return
+      setQuickSearchContext({ key, loading: false, previous, next })
+      revealContext()
+    } catch {
+      if (quickSearchContextRequestRef.current !== requestId) return
+      setQuickSearchContext({ key, loading: false, error: "تعذر تحميل سياق الآية" })
+      revealContext()
+    }
+  }, [quickSearchContext?.key, reciter, requestReadingPage])
+
   const preloadNavigationPage = useCallback((page: number) => {
     if (page < 1 || page > MAX_PAGE || page === currentPage) return
     void requestReadingPage(page, reciter)
@@ -3763,27 +3825,42 @@ export function QuranPlayer() {
     }
   }, [currentPage, reciter, setElapsed, setIsPlaying, tracks, verses])
 
-  const navigateToMutashabih = (item: MutashabihatVerse) => {
+  const rememberReadingReturnLocation = (
+    source: ReadingReturnLocation["source"],
+  ) => {
     setReadingReturnLocation((current) => current ?? {
       page: currentPage,
-      verseKey: currentVerse?.verseKey,
+      verseKey: currentVerse?.verseKey ?? currentVerseKeyRef.current ?? undefined,
+      source,
     })
+  }
+
+  const navigateToMutashabih = (item: MutashabihatVerse) => {
+    rememberReadingReturnLocation("mutashabihat")
     setMutashabihatOpen(false)
     moveToPage(item.page, item.verseKey)
   }
 
-  const returnFromMutashabihat = () => {
+  const returnToReadingLocation = () => {
     if (!readingReturnLocation) return
     const location = readingReturnLocation
     setReadingReturnLocation(null)
     moveToPage(location.page, location.verseKey)
   }
 
-  const finishQuickNavigation = (page: number, verseKey?: string) => {
+  const finishQuickNavigation = (
+    page: number,
+    verseKey?: string,
+    source: ReadingReturnLocation["source"] = "navigation",
+  ) => {
+    if (page !== currentPage || verseKey && verseKey !== currentVerse?.verseKey) {
+      rememberReadingReturnLocation(source)
+    }
     setDashboardOpen(false)
     setQuickNavigatorOpen(false)
     setQuickSearchExpanded(false)
     setQuickShowRelatedResults(false)
+    setQuickSearchContext(null)
     setQuickNavigatorQuery("")
     moveToPage(page, verseKey)
   }
@@ -4083,6 +4160,7 @@ export function QuranPlayer() {
     finishQuickNavigation(
       clamp(Number(event.currentTarget.dataset.page), 1, MAX_PAGE),
       event.currentTarget.dataset.verseKey,
+      "search",
     )
   }
 
@@ -6125,6 +6203,7 @@ export function QuranPlayer() {
   }
 
   const openBookmark = (bookmark: BookmarkItem) => {
+    rememberReadingReturnLocation("bookmark")
     pendingVerseTargetRef.current = null
     pendingVerseEdgeRef.current = null
     pendingVerseSeekMsRef.current = null
@@ -6204,6 +6283,7 @@ export function QuranPlayer() {
       toast.error("تعذر تحديد صفحة موضع المراجعة")
       return
     }
+    rememberReadingReturnLocation("review")
     setDashboardOpen(false)
     setViewMode("text")
     moveToPage(page, highlight.verseKey)
@@ -6215,6 +6295,7 @@ export function QuranPlayer() {
       toast.error("تعذر تحديد صفحة موضع المراجعة")
       return
     }
+    rememberReadingReturnLocation("review")
     setDashboardOpen(false)
     setViewMode("text")
     moveToPage(page, highlight.verseKey)
@@ -6227,6 +6308,7 @@ export function QuranPlayer() {
       toast.error("تعذر تحديد صفحة موضع المراجعة")
       return
     }
+    rememberReadingReturnLocation("review")
     setDashboardOpen(false)
     startOpenRecitation(page, highlight.verseKey)
   }
@@ -7614,6 +7696,8 @@ export function QuranPlayer() {
           onChange={(event) => {
             setQuickNavigatorQuery(event.target.value)
             setQuickShowRelatedResults(false)
+            quickSearchContextRequestRef.current += 1
+            setQuickSearchContext(null)
           }}
           placeholder="آية، سورة، الجزء 5، الحزب 12، أو 2:255"
           aria-label="البحث السريع في القرآن"
@@ -7820,7 +7904,13 @@ export function QuranPlayer() {
       {section !== "tracks" && quickNavigatorQuery.trim() && (
         <div className={cn(
           "order-2 mt-2 flex flex-col overflow-y-auto border-y",
-          quickSearchExpanded ? "min-h-0 flex-1" : dashboard ? "max-h-[42dvh]" : "max-h-64",
+          quickSearchExpanded
+            ? "min-h-0 flex-1"
+            : dashboard
+              ? "max-h-[42dvh]"
+              : quickSearchContext
+                ? "max-h-[min(62dvh,520px)]"
+                : "max-h-64",
         )}>
           <div className="sticky top-0 z-10 order-1 border-b bg-background/95 backdrop-blur-sm">
             <div className="flex min-h-9 items-center justify-between gap-2 px-2 py-1.5">
@@ -7871,6 +7961,9 @@ export function QuranPlayer() {
             const previousMatchGroup = index > 0
               ? getQuranSearchMatchGroup(visibleResults[index - 1], quickNavigatorQuery)
               : null
+            const resultKey = getQuickResultKey(result)
+            const contextOpen = quickSearchContext?.key === resultKey
+            const verseResult = result.kind === "verse" || !result.kind
             return (
               <div
                 key={result.id ?? `${result.kind ?? "verse"}-${result.verseKey}`}
@@ -7896,8 +7989,8 @@ export function QuranPlayer() {
                     {result.title ?? `سورة ${result.surahName} · الآية ${result.ayah}`} · صفحة {result.page}
                   </span>
                   <span
-                    className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", result.kind === "verse" || !result.kind ? "font-quran" : "text-sm")}
-                    data-quran-content={result.kind === "verse" || !result.kind ? "" : undefined}
+                    className={cn("block text-foreground", dashboard ? "line-clamp-3 text-lg leading-8" : "text-xl leading-9", verseResult ? "font-quran" : "text-sm")}
+                    data-quran-content={verseResult ? "" : undefined}
                   >
                     {getQuranSearchHighlightSegments(result.text, quickNavigatorQuery).map((segment, segmentIndex) => (
                       <span
@@ -7910,6 +8003,48 @@ export function QuranPlayer() {
                     ))}
                   </span>
                 </button>
+                {verseResult && (
+                  <div className={cn("pb-2", dashboard ? "px-2" : "px-3")}>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-7 px-2 text-[11px] text-muted-foreground"
+                      aria-expanded={contextOpen}
+                      aria-label={`${contextOpen ? "إخفاء" : "عرض"} سياق الآية ${result.verseKey}`}
+                      data-search-context-toggle={result.verseKey}
+                      onClick={() => void loadQuickSearchContext(result)}
+                    >
+                      {contextOpen && quickSearchContext.loading
+                        ? <LoaderCircle className="size-3 animate-spin" />
+                        : <BookOpen className="size-3" />}
+                      {contextOpen ? "إخفاء السياق" : "الآية السابقة والتالية"}
+                      {contextOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                    </Button>
+                    {contextOpen && (
+                      <div className="mt-1 divide-y border-y bg-secondary/20" data-search-context={result.verseKey}>
+                        {quickSearchContext.loading ? (
+                          <p className="px-3 py-3 text-xs text-muted-foreground">جارٍ تحميل سياق الآية...</p>
+                        ) : quickSearchContext.error ? (
+                          <p className="px-3 py-3 text-xs text-destructive">{quickSearchContext.error}</p>
+                        ) : (
+                          ([
+                            { label: "الآية السابقة", verse: quickSearchContext.previous },
+                            { label: "الآية التالية", verse: quickSearchContext.next },
+                          ] as const).map(({ label, verse }) => verse ? (
+                            <div key={verse.verseKey} className="px-3 py-2.5">
+                              <p className="mb-1 text-[10px] font-semibold text-muted-foreground">
+                                {label} · {verse.verseKey}
+                              </p>
+                              <p className="font-quran text-base leading-8 text-foreground" data-quran-content>
+                                {verse.text}
+                              </p>
+                            </div>
+                          ) : null)
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           }) : <p className="order-2 px-3 py-4 text-sm text-muted-foreground">لا توجد نتائج مباشرة</p>}
@@ -8336,7 +8471,7 @@ export function QuranPlayer() {
               activity={browseActivity}
               onActivityChange={changeBrowseActivity}
               activityControls={activityControls}
-              onNavigate={moveToPage}
+              onNavigate={(page, verseKey) => finishQuickNavigation(page, verseKey, "navigation")}
               onPrefetch={preloadNavigationPage}
               onSetRange={(range) => {
                 setSessionNavigationRange(range)
@@ -8358,7 +8493,7 @@ export function QuranPlayer() {
             setAppSettingsOpen(true)
           }}
           onStartLearningPlanRange={openLearningPlanRange}
-          onOpenMutashabihatVerse={(verse) => finishQuickNavigation(verse.page, verse.verseKey)}
+          onOpenMutashabihatVerse={(verse) => finishQuickNavigation(verse.page, verse.verseKey, "mutashabihat")}
           onOpenBookmark={openDashboardBookmark}
           onDeleteBookmark={(bookmark) => removeBookmark(bookmark.id)}
           onMoveBookmark={(bookmark, direction) => moveBookmark(bookmark.id, direction)}
@@ -8747,10 +8882,11 @@ export function QuranPlayer() {
             variant="secondary"
             size="sm"
             className="fixed bottom-[calc(var(--wird-player-height,80px)+0.75rem)] left-3 z-[45] border bg-card/95 shadow-md backdrop-blur"
-            onClick={returnFromMutashabihat}
+            data-reading-return-source={readingReturnLocation.source}
+            onClick={returnToReadingLocation}
           >
             <ChevronRight />
-            العودة للموضع السابق
+            العودة إلى موضعك السابق
           </Button>
         )}
 

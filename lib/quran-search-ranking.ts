@@ -20,6 +20,9 @@ const EMPTY_MATCH: MatchAnalysis = { group: "related", score: 0 }
 function normalizeCharacter(value: string) {
   return value
     .normalize("NFKD")
+    .replace(/\u0670/g, "ا")
+    .replace(/\u06E5/g, "و")
+    .replace(/\u06E6/g, "ي")
     .replace(/[\p{M}\u0610-\u061A\u06D6-\u06ED]/gu, "")
     .replace(/[أإآٱ]/g, "ا")
     .replace(/[ىئ]/g, "ي")
