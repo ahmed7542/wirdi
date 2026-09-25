@@ -3,6 +3,7 @@ import type { LearningPlanType } from "@/lib/learning-plan"
 export const READING_STATS_STORAGE_KEY = "wird-reading-stats-v1"
 export const SESSION_HISTORY_STORAGE_KEY = "wird-session-history-v1"
 export const SAVED_SESSIONS_STORAGE_KEY = "wird-saved-sessions-v1"
+export const REVIEW_SIGNALS_STORAGE_KEY = "wird-review-signals-v1"
 
 export type WirdSessionMode = "listen" | "recite" | "test"
 export type WirdTestKind = "standard" | "mutashabihat"
@@ -13,6 +14,14 @@ export type ReadingStats = {
   sessionsCompleted: number
   days: Record<string, number>
   pages: number[]
+}
+
+export type ReviewSignal = {
+  verseKey: string
+  page: number
+  chapterName: string
+  count: number
+  lastAt: number
 }
 
 export type SavedSessionPreset = {
@@ -70,6 +79,35 @@ export function localDateKey(date: Date) {
     String(date.getMonth() + 1).padStart(2, "0"),
     String(date.getDate()).padStart(2, "0"),
   ].join("-")
+}
+
+export function recordReviewSignal(signal: Omit<ReviewSignal, "count" | "lastAt">) {
+  const current = loadReviewSignals()
+  const existing = current.find((item) => item.verseKey === signal.verseKey)
+  const nextSignal: ReviewSignal = {
+    ...signal,
+    count: (existing?.count ?? 0) + 1,
+    lastAt: Date.now(),
+  }
+  const next = [nextSignal, ...current.filter((item) => item.verseKey !== signal.verseKey)]
+    .sort((first, second) => second.count - first.count || second.lastAt - first.lastAt)
+    .slice(0, 20)
+  window.localStorage.setItem(REVIEW_SIGNALS_STORAGE_KEY, JSON.stringify(next))
+  window.dispatchEvent(new Event("wird-activity-changed"))
+  return nextSignal
+}
+
+export function loadReviewSignals() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(REVIEW_SIGNALS_STORAGE_KEY) ?? "[]") as ReviewSignal[]
+    return saved.filter((item) => (
+      item && typeof item.verseKey === "string" && Number.isInteger(item.page) &&
+      item.page >= 1 && item.page <= 604 && Number.isFinite(item.count)
+    )).slice(0, 20)
+  } catch {
+    window.localStorage.removeItem(REVIEW_SIGNALS_STORAGE_KEY)
+    return []
+  }
 }
 
 export function loadReadingStats() {

@@ -17,6 +17,9 @@ export type KhatmaPlan = {
   pageCount?: number
   lastOpenedDate?: string
   lastNotifiedDate?: string
+  catchUpStartedDate?: string
+  catchUpDays?: number
+  catchUpPagesPerDay?: number
 }
 
 type KhatmaStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">
@@ -52,6 +55,15 @@ export function readKhatmaPlan(storage?: KhatmaStorage): KhatmaPlan | null {
       completedPage: clampInteger(plan.completedPage, 0, KHATMA_TOTAL_PAGES),
       reminderEnabled: Boolean(plan.reminderEnabled),
       reminderTime: /^\d{2}:\d{2}$/.test(plan.reminderTime) ? plan.reminderTime : "20:00",
+    }
+    if (Number.isFinite(plan.catchUpDays) && Number.isFinite(plan.catchUpPagesPerDay) && plan.catchUpStartedDate && /^\d{4}-\d{2}-\d{2}$/.test(plan.catchUpStartedDate)) {
+      normalized.catchUpStartedDate = plan.catchUpStartedDate
+      normalized.catchUpDays = clampInteger(plan.catchUpDays!, 1, 365)
+      normalized.catchUpPagesPerDay = clampInteger(plan.catchUpPagesPerDay!, 1, 100)
+    } else {
+      delete normalized.catchUpStartedDate
+      delete normalized.catchUpDays
+      delete normalized.catchUpPagesPerDay
     }
     if (Number.isFinite(plan.startPage) && Number.isFinite(plan.pageCount)) {
       normalized.startPage = clampInteger(plan.startPage!, 1, KHATMA_TOTAL_PAGES)

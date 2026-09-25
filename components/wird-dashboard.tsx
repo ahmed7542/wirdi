@@ -43,8 +43,12 @@ import { Button } from "@/components/ui/button"
 import type { VerseHighlight } from "@/components/quran-page"
 import {
   loadReadingStats,
+  loadReviewSignals,
+  loadSessionHistory,
   localDateKey,
   type ReadingStats,
+  type ReviewSignal,
+  type SessionHistoryItem,
 } from "@/lib/wird-activity"
 import {
   readLastWirdBackupAt,
@@ -155,6 +159,8 @@ export function WirdDashboard({
 }: WirdDashboardProps) {
   const { language } = useInterfaceLanguage()
   const [stats, setStats] = useState<ReadingStats>(EMPTY_STATS)
+  const [sessionHistory, setSessionHistory] = useState<SessionHistoryItem[]>([])
+  const [reviewSignals, setReviewSignals] = useState<ReviewSignal[]>([])
   const [khatma, setKhatma] = useState<KhatmaPlan | null>(null)
   const [learningPlans, setLearningPlans] = useState<LearningPlan[]>([])
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null)
@@ -168,6 +174,8 @@ export function WirdDashboard({
     }
     const refresh = () => {
       setStats(loadReadingStats())
+      setSessionHistory(loadSessionHistory())
+      setReviewSignals(loadReviewSignals())
       setKhatma(readKhatmaPlan())
       setLearningPlans(loadLearningPlans())
       setLastBackupAt(readLastWirdBackupAt(window.localStorage))
@@ -226,6 +234,20 @@ export function WirdDashboard({
   }
 
   const todaySeconds = stats.days[localDateKey(new Date())] ?? 0
+  const weekStartedAt = new Date()
+  weekStartedAt.setHours(0, 0, 0, 0)
+  weekStartedAt.setDate(weekStartedAt.getDate() - 6)
+  const weeklySeconds = Object.entries(stats.days).reduce((total, [date, seconds]) => {
+    const [year, month, day] = date.split("-").map(Number)
+    return new Date(year, month - 1, day).getTime() >= weekStartedAt.getTime() ? total + seconds : total
+  }, 0)
+  const weeklyCompletedSessions = sessionHistory.filter((session) => (
+    session.completed && session.updatedAt >= weekStartedAt.getTime()
+  )).length
+  const activeWeekDays = Object.entries(stats.days).filter(([date, seconds]) => {
+    const [year, month, day] = date.split("-").map(Number)
+    return seconds > 0 && new Date(year, month - 1, day).getTime() >= weekStartedAt.getTime()
+  }).length
   const khatmaCompleted = Math.min(Math.max(khatma?.completedPage ?? 0, 0), 604)
   const khatmaRemaining = 604 - khatmaCompleted
   const khatmaProgress = Math.round((khatmaCompleted / 604) * 100)
@@ -510,6 +532,33 @@ export function WirdDashboard({
             <p className="mt-1 text-lg font-bold tabular-nums">{stats.sessionsCompleted}</p>
           </div>
         </div>
+        <div className="grid grid-cols-3 divide-x divide-x-reverse border-b text-center text-xs">
+          <div className="px-2 py-3">
+            <p className="text-muted-foreground">قراءة الأسبوع</p>
+            <strong className="mt-1 block text-sm tabular-nums">{formatDuration(weeklySeconds)}</strong>
+          </div>
+          <div className="px-2 py-3">
+            <p className="text-muted-foreground">أيام النشاط</p>
+            <strong className="mt-1 block text-sm tabular-nums">{activeWeekDays} / 7</strong>
+          </div>
+          <div className="px-2 py-3">
+            <p className="text-muted-foreground">جلسات الأسبوع</p>
+            <strong className="mt-1 block text-sm tabular-nums">{weeklyCompletedSessions}</strong>
+          </div>
+        </div>
+        {reviewSignals.length > 0 && (
+          <div className="border-b px-3 py-3">
+            <p className="text-xs font-semibold">مقترحة للمراجعة من نمط الاستماع</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">مواضع تكرر الرجوع إليها أو إعادة تلاوتها على هذا الجهاز</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {reviewSignals.slice(0, 3).map((signal) => (
+                <Badge key={signal.verseKey} variant="secondary">
+                  {signal.chapterName} · {signal.verseKey} · {signal.count} مرات
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="border-t py-5" aria-label="حالة النسخ الاحتياطي">

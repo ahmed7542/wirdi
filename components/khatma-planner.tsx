@@ -175,7 +175,6 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
     : 1
   const todayStart = plan ? Math.min(plan.completedPage + 1, TOTAL_PAGES) : 1
   const baseEnd = plan ? Math.min(plan.completedPage + adaptivePages, TOTAL_PAGES) : 1
-  const todayEnd = plan ? Math.min(baseEnd + extraPages, TOTAL_PAGES) : 1
   const expectedPage = plan
     ? plan.method === "duration"
       ? Math.min(TOTAL_PAGES, Math.floor((elapsedPlanDay * TOTAL_PAGES) / planDays))
@@ -186,6 +185,12 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
   const overdueDays = plan && !isComplete
     ? Math.max(0, elapsedDays - coveredPlanDays(plan))
     : 0
+  const catchUpElapsedDays = plan?.catchUpStartedDate ? daysBetween(plan.catchUpStartedDate, todayKey) : 0
+  const catchUpActive = Boolean(
+    plan?.catchUpDays && plan.catchUpPagesPerDay && catchUpElapsedDays < plan.catchUpDays,
+  )
+  const catchUpPages = catchUpActive ? plan?.catchUpPagesPerDay ?? 0 : 0
+  const todayEnd = plan ? Math.min(baseEnd + catchUpPages + extraPages, TOTAL_PAGES) : 1
   const isAhead = plan ? plan.completedPage >= expectedPage : false
   const finishDate = plan ? addDays(plan.startDate, planDays - 1) : ""
   const setupPlanDays = method === "duration" ? durationDays : Math.ceil(TOTAL_PAGES / dailyPages)
@@ -193,6 +198,27 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
   const persistPlan = (nextPlan: KhatmaPlan) => {
     setPlan(nextPlan)
     savePlan(nextPlan)
+  }
+
+  const startCatchUpPlan = (days: number) => {
+    if (!plan) return
+    const overduePages = Math.max(expectedPage - plan.completedPage, 1)
+    persistPlan({
+      ...plan,
+      catchUpStartedDate: todayKey,
+      catchUpDays: Math.max(1, days),
+      catchUpPagesPerDay: Math.ceil(overduePages / Math.max(1, days)),
+    })
+    toast.success("تم إنشاء خطة التعويض دون تغيير تقدم الختمة")
+  }
+
+  const cancelCatchUpPlan = () => {
+    if (!plan) return
+    const nextPlan = { ...plan }
+    delete nextPlan.catchUpStartedDate
+    delete nextPlan.catchUpDays
+    delete nextPlan.catchUpPagesPerDay
+    persistPlan(nextPlan)
   }
 
   const requestNotificationPermission = async () => {
@@ -383,12 +409,31 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
               </div>
 
               {overdueDays > 0 && (
-                <div
-                  className="border-y border-destructive/25 bg-destructive/5 px-3 py-2 text-center text-sm font-semibold text-destructive"
-                  data-khatma-overdue-days={overdueDays}
-                  role="status"
-                >
-                  {formatOverdueDays(overdueDays, language)}
+                <div className="space-y-3 border-y border-destructive/25 bg-destructive/5 px-3 py-3 text-center">
+                  <p
+                    className="text-sm font-semibold text-destructive"
+                    data-khatma-overdue-days={overdueDays}
+                    role="status"
+                  >
+                    {formatOverdueDays(overdueDays, language)}
+                  </p>
+                  {catchUpActive ? (
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-muted-foreground">
+                        تعويض {catchUpPages} صفحة إضافية يوميًا · متبقي {Math.max((plan.catchUpDays ?? 1) - catchUpElapsedDays, 1)} أيام
+                      </span>
+                      <Button variant="ghost" size="xs" onClick={cancelCatchUpPlan}>إلغاء التعويض</Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">وزّع الصفحات المتأخرة على مدة مريحة</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        <Button variant="outline" size="sm" onClick={() => startCatchUpPlan(3)}>تعويض خلال 3 أيام</Button>
+                        <Button variant="outline" size="sm" onClick={() => startCatchUpPlan(7)}>تعويض خلال أسبوع</Button>
+                        <Button variant="outline" size="sm" onClick={() => startCatchUpPlan(remainingDays)}>على بقية الخطة</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -407,7 +452,8 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {todayEnd - todayStart + 1} صفحة
-                      {extraPages > 0 ? `، منها ${extraPages} إضافية` : ""}
+                      {catchUpPages > 0 ? `، منها ${catchUpPages} للتعويض` : ""}
+                      {extraPages > 0 ? `، و${extraPages} إضافية` : ""}
                     </p>
                     <p className="mt-3 text-xs text-primary">
                       {isAhead

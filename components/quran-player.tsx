@@ -27,6 +27,7 @@ import {
   Highlighter,
   Ellipsis,
   GitCompareArrows,
+  ListPlus,
   LoaderCircle,
   Maximize2,
   Mic,
@@ -214,6 +215,7 @@ import {
   incrementCompletedSessions,
   loadSavedSessions,
   loadSessionHistory,
+  recordReviewSignal,
   saveSavedSession,
   upsertSessionHistory,
   type SavedSessionPreset,
@@ -493,6 +495,19 @@ export type BookmarkItem = {
   createdAt: number
 }
 
+type SessionQueueItem = {
+  verseKey: string
+  page: number
+  chapterId: number
+  chapterName: string
+  createdAt: number
+}
+
+type ReciterPlaybackPreference = {
+  speed: number
+  volume: number
+}
+
 function getBookmarkCategoryLabel(categories: BookmarkCategory[], categoryId?: string) {
   return categories.find((category) => category.id === categoryId)?.label
 }
@@ -562,6 +577,8 @@ const RECITER_STORAGE_KEY = "wird-reciter"
 const FAVORITES_STORAGE_KEY = "wird-favorite-reciters"
 const SETTINGS_STORAGE_KEY = "wird-player-settings"
 const BOOKMARKS_STORAGE_KEY = "wird-bookmarks"
+const SESSION_QUEUE_STORAGE_KEY = "wird-session-queue-v1"
+const RECITER_PLAYBACK_STORAGE_KEY = "wird-reciter-playback-v1"
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(Math.round(value || min), min), max)
@@ -1077,6 +1094,7 @@ export function QuranPlayer() {
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [savedSessions, setSavedSessions] = useState<SavedSessionPreset[]>([])
   const [previousSessions, setPreviousSessions] = useState<SessionHistoryItem[]>([])
+  const [sessionQueue, setSessionQueue] = useState<SessionQueueItem[]>([])
   const [savedSessionName, setSavedSessionName] = useState("")
   const [editingSavedSessionId, setEditingSavedSessionId] = useState<string | null>(null)
   const [renameSavedSessionTarget, setRenameSavedSessionTarget] = useState<SavedSessionPreset | null>(null)
@@ -1288,6 +1306,11 @@ export function QuranPlayer() {
     ? verseIndex < lastSessionVerseIndex || currentPage < sessionEnd
     : trackIndex < tracks.length - 1 || Boolean(currentTrack?.advanceToPage && currentTrack.advanceToPage <= sessionEnd)
   const adjustedSessionDuration = sessionDuration ? sessionDuration.seconds / speed : null
+  const boundedSessionPagePosition = Math.min(Math.max(currentPage - sessionStart + 1, 1), sessionCount)
+  const boundedSessionProgress = sessionCount > 0 ? (boundedSessionPagePosition - 1) / sessionCount : 0
+  const sessionRemainingSeconds = adjustedSessionDuration === null
+    ? null
+    : Math.max(0, adjustedSessionDuration * (1 - boundedSessionProgress))
   const selectedReciter = RECITERS.find((item) => item.id === reciter) ?? RECITERS[0]
   const currentModeSavedSessions = useMemo(
     () => savedSessions.filter((session) => session.mode === sessionMode),
@@ -1726,7 +1749,7 @@ export function QuranPlayer() {
   }, [sessionEnd, sessionEndVerseKey, sessionStart, sessionStartVerseKey])
 
   useEffect(() => {
-    if (!settingsLoaded || !extendedSpeedOpen) return
+    if (!settingsLoaded || (!extendedSpeedOpen && !boundedSessionActive)) return
     const controller = new AbortController()
     const query = new URLSearchParams({
       reciter: String(reciter),
@@ -1752,7 +1775,7 @@ export function QuranPlayer() {
         if (!controller.signal.aborted) setSessionDurationLoading(false)
       })
     return () => controller.abort()
-  }, [extendedSpeedOpen, reciter, sessionEnd, sessionEndVerseKey, sessionStart, sessionStartVerseKey, settingsLoaded])
+  }, [boundedSessionActive, extendedSpeedOpen, reciter, sessionEnd, sessionEndVerseKey, sessionStart, sessionStartVerseKey, settingsLoaded])
 
   const toggleReaderChrome = () => {
     if (readerFocusActive) {
@@ -1779,6 +1802,76 @@ export function QuranPlayer() {
   const persistVerseHighlights = (next: VerseHighlight[]) => {
     setVerseHighlights(next)
     saveVerseHighlights(next)
+  }
+
+  const persistSessionQueue = (next: SessionQueueItem[]) => {
+    const limited = next.slice(0, 30)
+    setSessionQueue(limited)
+    window.localStorage.setItem(SESSION_QUEUE_STORAGE_KEY, JSON.stringify(limited))
+  }
+
+  const addActionVerseToQueue = () => {
+    if (!verseAction) return
+    persistSessionQueue([
+      ...sessionQueue.filter((item) => item.verseKey !== verseAction.verseKey),
+      {
+        verseKey: verseAction.verseKey,
+        page: verseAction.pageNumber,
+        chapterId: verseAction.chapterId,
+        chapterName: verseAction.chapterName,
+        // Event handlers need an absolute timestamp for persistence across reloads.
+        // eslint-disable-next-line react-hooks/purity
+        createdAt: Date.now(),
+      },
+    ])
+    setVerseActionKey(null)
+    setVerseActionPosition(null)
+    toast.success("أضيفت الآية إلى الجلسة القادمة")
+  }
+
+  const addActionVerseToReview = () => {
+    if (!verseAction) return
+    const wordCount = Math.max(1, verseAction.text.trim().split(/\s+/).length)
+    const review = scheduleHighlight({
+      verseKey: verseAction.verseKey,
+      startPosition: 1,
+      endPosition: wordCount,
+      chapterName: verseAction.chapterName,
+      verseText: verseAction.text,
+      pageNumber: verseAction.pageNumber,
+    }, "reinforce", verseAction.pageNumber)
+    persistVerseHighlights([review, ...verseHighlights.filter((highlight) => highlight.verseKey !== review.verseKey)])
+    setVerseActionKey(null)
+    setVerseActionPosition(null)
+    toast.success("أضيفت الآية إلى مراجعة اليوم")
+  }
+
+  const playQueuedVerse = (index: number) => {
+    const item = sessionQueue[index]
+    if (!item) return
+    moveToPage(item.page, item.verseKey)
+    startPlayback()
+  }
+
+  const playNextQueuedVerse = () => {
+    if (!sessionQueue.length) return
+    const currentIndex = sessionQueue.findIndex((item) => item.verseKey === currentVerse?.verseKey)
+    playQueuedVerse(currentIndex >= 0 && currentIndex < sessionQueue.length - 1 ? currentIndex + 1 : 0)
+  }
+
+  const queueMutashabihatGroup = () => {
+    if (!mutashabihatData?.source) return
+    const group = [mutashabihatData.source, ...mutashabihatData.similar].slice(0, 12).map<SessionQueueItem>((item) => ({
+      verseKey: item.verseKey,
+      page: item.page,
+      chapterId: item.surah,
+      chapterName: item.surahName,
+      createdAt: Date.now(),
+    }))
+    const keys = new Set(group.map((item) => item.verseKey))
+    persistSessionQueue([...sessionQueue.filter((item) => !keys.has(item.verseKey)), ...group])
+    setMutashabihatOpen(false)
+    toast.success(`أضيف ${group.length} موضعًا إلى الجلسة القادمة`)
   }
 
   const openVerseActions = (verseKey: string, position?: number) => {
@@ -2097,6 +2190,18 @@ export function QuranPlayer() {
     let initialPage = clamp(savedLastReading?.page ?? 1, 1, MAX_PAGE)
     const savedReciter = Number(window.localStorage.getItem(RECITER_STORAGE_KEY))
     if (RECITERS.some((item) => item.id === savedReciter)) setReciter(savedReciter)
+    let reciterPreferences: Record<string, ReciterPlaybackPreference> = {}
+    try {
+      reciterPreferences = JSON.parse(window.localStorage.getItem(RECITER_PLAYBACK_STORAGE_KEY) ?? "{}")
+    } catch {
+      window.localStorage.removeItem(RECITER_PLAYBACK_STORAGE_KEY)
+    }
+    try {
+      const queue = JSON.parse(window.localStorage.getItem(SESSION_QUEUE_STORAGE_KEY) ?? "[]") as SessionQueueItem[]
+      setSessionQueue(queue.filter((item) => item && typeof item.verseKey === "string").slice(0, 30))
+    } catch {
+      window.localStorage.removeItem(SESSION_QUEUE_STORAGE_KEY)
+    }
 
     try {
       const savedFavorites = JSON.parse(
@@ -2155,7 +2260,8 @@ export function QuranPlayer() {
         setReciter(preferredReciter)
         window.localStorage.setItem(RECITER_STORAGE_KEY, String(preferredReciter))
       }
-      const savedSpeed = clampSpeed(saved.speed ?? 1)
+      const preferredPlayback = reciterPreferences[String(preferredReciter)]
+      const savedSpeed = clampSpeed(preferredPlayback?.speed ?? saved.speed ?? 1)
       const startVerseKey = saved.startVerseKey || undefined
       const endVerseKey = saved.endVerseKey || undefined
       draftSessionRangeRef.current = {
@@ -2174,7 +2280,7 @@ export function QuranPlayer() {
       setDraftEndVerseKey(endVerseKey)
       setSessionEndVerseKey(endVerseKey)
       setSpeed(savedSpeed)
-      const savedVolume = Math.min(Math.max(saved.volume ?? 1, 0), 1)
+      const savedVolume = Math.min(Math.max(preferredPlayback?.volume ?? saved.volume ?? 1, 0), 1)
       setVolume(savedVolume)
       if (savedVolume > 0) previousVolumeRef.current = savedVolume
       setRepeatTarget(normalizeRepeatTarget(saved.repeatTarget))
@@ -2324,6 +2430,13 @@ export function QuranPlayer() {
         speechLabels,
       }),
     )
+    try {
+      const preferences = JSON.parse(window.localStorage.getItem(RECITER_PLAYBACK_STORAGE_KEY) ?? "{}") as Record<string, ReciterPlaybackPreference>
+      preferences[String(reciter)] = { speed, volume }
+      window.localStorage.setItem(RECITER_PLAYBACK_STORAGE_KEY, JSON.stringify(preferences))
+    } catch {
+      window.localStorage.removeItem(RECITER_PLAYBACK_STORAGE_KEY)
+    }
   }, [
     settingsLoaded,
     draftStart,
@@ -4253,14 +4366,15 @@ export function QuranPlayer() {
     setSessionSettingsOpen(true)
   }
 
-  const startSavedSession = (session: SavedSessionPreset | SessionHistoryItem) => {
+  const startSavedSession = (session: SavedSessionPreset | SessionHistoryItem, resume = false) => {
     const previousListeningSession = "currentPage" in session && session.mode === "listen"
-    const targetPage = previousListeningSession
-      ? session.startPage
-      : "currentPage" in session ? session.currentPage : session.startPage
-    const targetVerseKey = previousListeningSession
-      ? session.startVerseKey
-      : "currentVerseKey" in session ? session.currentVerseKey : session.startVerseKey
+    const resumePreviousListening = previousListeningSession && resume
+    const targetPage = resumePreviousListening
+      ? session.currentPage
+      : previousListeningSession ? session.startPage : "currentPage" in session ? session.currentPage : session.startPage
+    const targetVerseKey = resumePreviousListening
+      ? session.currentVerseKey
+      : previousListeningSession ? session.startVerseKey : "currentVerseKey" in session ? session.currentVerseKey : session.startVerseKey
     setSessionNavigationRange({
       startPage: session.startPage,
       endPage: session.endPage,
@@ -4277,7 +4391,7 @@ export function QuranPlayer() {
     setDashboardOpen(false)
     setNavigationOpen(false)
     setSessionSettingsOpen(false)
-    pendingResumeSessionIdRef.current = null
+    pendingResumeSessionIdRef.current = resumePreviousListening ? session.id : null
     pendingLearningPlanTypeRef.current = "learningPlanType" in session ? session.learningPlanType : undefined
     void startSession(session.mode, session.reciter, targetPage, {
       repeatTarget: session.repeatTarget ?? "3",
@@ -5449,6 +5563,7 @@ export function QuranPlayer() {
     ) {
       audio.pause()
       verseRepeatIterationRef.current += 1
+      recordReviewSignal({ verseKey: activeVerse.verseKey, page: activeVerse.pageNumber, chapterName: activeVerse.chapterName })
       verseRepeatTimerRef.current = setTimeout(() => {
         audio.currentTime = activeVerse.timestampFrom / 1000
         setVerseIndex(activeVerseIndex)
@@ -5491,6 +5606,8 @@ export function QuranPlayer() {
         !verseRepeatTimerRef.current
       ) {
         verseRepeatIterationRef.current += 1
+        const repeatedVerse = verses[activeVerseIndex]
+        if (repeatedVerse) recordReviewSignal({ verseKey: repeatedVerse.verseKey, page: repeatedVerse.pageNumber, chapterName: repeatedVerse.chapterName })
         verseRepeatTimerRef.current = setTimeout(() => {
           audio.currentTime = 0
           if (isPlayingRef.current) audio.play().catch(reportAudioPlaybackFailure)
@@ -5571,6 +5688,7 @@ export function QuranPlayer() {
 
   const goToPreviousVerse = useCallback(() => {
     if (!canGoToPreviousVerse || isLoading) return
+    if (currentVerse) recordReviewSignal({ verseKey: currentVerse.verseKey, page: currentVerse.pageNumber, chapterName: currentVerse.chapterName })
     if (!hasVerseSynchronization) {
       if (trackIndex > 0) {
         const previousTrack = tracks[trackIndex - 1]
@@ -5601,6 +5719,7 @@ export function QuranPlayer() {
     canGoToPreviousVerse,
     currentPage,
     currentTrack,
+    currentVerse,
     firstSessionVerseIndex,
     hasVerseSynchronization,
     isLoading,
@@ -5711,7 +5830,7 @@ export function QuranPlayer() {
     speedClickSuppressionUntilRef.current = 0
     speedLongPressTimerRef.current = setTimeout(() => {
       speedLongPressTimerRef.current = null
-      speedClickSuppressionUntilRef.current = Date.now() + 1_000
+      speedClickSuppressionUntilRef.current = Number.POSITIVE_INFINITY
       setSessionDuration(null)
       setSessionDurationLoading(true)
       setExtendedSpeedOpen(true)
@@ -5722,7 +5841,7 @@ export function QuranPlayer() {
   const handleSpeedButtonClick = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     clearSpeedLongPress()
-    if (Date.now() < speedClickSuppressionUntilRef.current) {
+    if (speedClickSuppressionUntilRef.current > 0) {
       speedClickSuppressionUntilRef.current = 0
       return
     }
@@ -5733,13 +5852,22 @@ export function QuranPlayer() {
   const handleSpeedContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
     clearSpeedLongPress()
-    speedClickSuppressionUntilRef.current = Date.now() + 1_000
+    speedClickSuppressionUntilRef.current = Number.POSITIVE_INFINITY
     setSessionDuration(null)
     setSessionDurationLoading(true)
     setExtendedSpeedOpen(true)
   }
 
   const selectReciter = (id: number) => {
+    let reciterPreference: ReciterPlaybackPreference | undefined
+    try {
+      const preferences = JSON.parse(window.localStorage.getItem(RECITER_PLAYBACK_STORAGE_KEY) ?? "{}") as Record<string, ReciterPlaybackPreference>
+      preferences[String(reciter)] = { speed, volume }
+      reciterPreference = preferences[String(id)]
+      window.localStorage.setItem(RECITER_PLAYBACK_STORAGE_KEY, JSON.stringify(preferences))
+    } catch {
+      window.localStorage.removeItem(RECITER_PLAYBACK_STORAGE_KEY)
+    }
     if (id !== reciter) {
       const audioMs = (audioRef.current?.currentTime ?? 0) * 1000
       const timedVerse = hasVerseSynchronization && currentTrack
@@ -5807,6 +5935,12 @@ export function QuranPlayer() {
       verseRepeatIterationRef.current = 0
       advancingRef.current = false
       setReciter(id)
+      if (reciterPreference) {
+        setSpeed(clampSpeed(reciterPreference.speed))
+        const preferredVolume = Math.min(Math.max(reciterPreference.volume, 0), 1)
+        setVolume(preferredVolume)
+        if (preferredVolume > 0) previousVolumeRef.current = preferredVolume
+      }
     }
     setReciterPickerOpen(false)
     setCompactReciterPickerOpen(false)
@@ -6745,14 +6879,12 @@ export function QuranPlayer() {
   )
 
   const recentActivitySection = (
-    <div className="space-y-1.5 border-t bg-card px-3 py-2">
-        <p className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
-          <Bookmark className="size-3 text-primary" />
-          الأخيرة في {sessionMode === "listen" ? "الاستماع" : sessionMode === "recite" ? "التسميع" : "الاختبار"}
-        </p>
-        {(currentModeSavedSessions.length > 0 || previousSessions.some((session) => session.mode === sessionMode)) ? (
-          <div className="grid max-h-28 grid-cols-2 gap-px overflow-y-auto border bg-border">
-            {currentModeSavedSessions.slice(0, 3).map((session) => (
+    <div className="space-y-3 border-t bg-card px-3 py-3">
+      {currentModeSavedSessions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-muted-foreground">محفوظة</p>
+          <div className="grid grid-cols-2 gap-px border bg-border">
+            {currentModeSavedSessions.slice(0, 4).map((session) => (
               <div key={`saved-${session.id}`} className="flex min-w-0 items-center gap-1 bg-card">
                 <button
                   type="button"
@@ -6762,51 +6894,92 @@ export function QuranPlayer() {
                   onPointerUp={cancelSessionLongPress}
                   onPointerCancel={cancelSessionLongPress}
                   onPointerLeave={cancelSessionLongPress}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    cancelSessionLongPress()
-                    suppressNextSessionClick()
-                    configureSession(session)
-                  }}
+                  onContextMenu={(event) => { event.preventDefault(); configureSession(session) }}
                 >
                   <span className="block truncate text-xs font-semibold">{session.name}</span>
-                  <span className="block truncate text-[10px] text-muted-foreground">
-                    محفوظة · {sessionPageRangeLabel(session, quickNavigationData)}
-                  </span>
+                  <span className="block truncate text-[10px] text-muted-foreground">{sessionPageRangeLabel(session, quickNavigationData)}</span>
                 </button>
                 {renderSavedSessionMenu(session)}
               </div>
             ))}
-            {previousSessions.filter((session) => session.mode === sessionMode).slice(0, 3).map((session) => (
-              <button
-                key={`previous-${session.id}`}
-                type="button"
-                className="col-span-2 block min-w-0 touch-manipulation bg-card px-2 py-1.5 text-right hover:bg-accent"
-                onClick={() => openSessionFromRecent(session)}
-                onPointerDown={() => scheduleSessionLongPress(session)}
-                onPointerUp={cancelSessionLongPress}
-                onPointerCancel={cancelSessionLongPress}
-                onPointerLeave={cancelSessionLongPress}
-                onContextMenu={(event) => {
-                  event.preventDefault()
-                  cancelSessionLongPress()
-                  suppressNextSessionClick()
-                  configureSession(session)
-                }}
-              >
-                <span className="block truncate text-xs font-semibold leading-5">
-                  {sessionChapterRangeLabel(session, quickNavigationData) ?? "الجلسة السابقة"}
-                </span>
-                <span className="block truncate text-xs font-semibold leading-5">
-                  من صفحة {session.startPage} إلى صفحة {session.endPage}
-                  {session.currentVerseKey ? ` · آية ${session.currentVerseKey}` : ""}
-                </span>
-              </button>
+          </div>
+        </div>
+      )}
+
+      {([false, true] as const).map((completed) => {
+        const sessions = previousSessions.filter((session) => session.mode === sessionMode && session.completed === completed).slice(0, 4)
+        if (!sessions.length) return null
+        return (
+          <div key={String(completed)} className="space-y-1.5">
+            <p className="text-[10px] font-semibold text-muted-foreground">{completed ? "مكتملة" : "قيد التقدم"}</p>
+            <div className="space-y-px border bg-border">
+              {sessions.map((session) => {
+                const progress = session.endPage > session.startPage
+                  ? Math.round(((session.currentPage - session.startPage) / (session.endPage - session.startPage)) * 100)
+                  : completed ? 100 : 0
+                return (
+                  <div key={`previous-${session.id}`} className="flex items-center gap-1 bg-card">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 touch-manipulation px-2 py-1.5 text-right hover:bg-accent"
+                      onClick={() => openSessionFromRecent(session)}
+                      onPointerDown={() => scheduleSessionLongPress(session)}
+                      onPointerUp={cancelSessionLongPress}
+                      onPointerCancel={cancelSessionLongPress}
+                      onPointerLeave={cancelSessionLongPress}
+                      onContextMenu={(event) => { event.preventDefault(); configureSession(session) }}
+                    >
+                      <span className="block truncate text-xs font-semibold">{sessionChapterRangeLabel(session, quickNavigationData) ?? "الجلسة السابقة"}</span>
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        من صفحة {session.startPage} إلى صفحة {session.endPage} · آخر موضع {session.currentPage} · {Math.min(Math.max(progress, 0), 100)}%
+                      </span>
+                    </button>
+                    {!completed && session.mode === "listen" && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="shrink-0"
+                        aria-label={`استئناف جلسة الاستماع من صفحة ${session.currentPage}`}
+                        onClick={() => startSavedSession(session, true)}
+                      >
+                        <Play />
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+
+      {sessionQueue.length > 0 && (
+        <div className="space-y-1.5 border-t pt-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground"><ListPlus className="size-3" /> الجلسة القادمة</p>
+            <Button variant="ghost" size="xs" onClick={playNextQueuedVerse}><Play /> تشغيل التالي</Button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {sessionQueue.map((item, index) => (
+              <div key={item.verseKey} className="flex shrink-0 items-center border bg-background">
+                <button className="px-2 py-1.5 text-xs hover:bg-accent" onClick={() => playQueuedVerse(index)}>
+                  {item.chapterName} · {item.verseKey}
+                </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`حذف الآية ${item.verseKey} من الجلسة القادمة`}
+                  onClick={() => persistSessionQueue(sessionQueue.filter((entry) => entry.verseKey !== item.verseKey))}
+                ><X /></Button>
+              </div>
             ))}
           </div>
-        ) : (
-          <p className="border-y py-1.5 text-xs text-muted-foreground">لا توجد مواضع سابقة بعد.</p>
-        )}
+        </div>
+      )}
+
+      {currentModeSavedSessions.length === 0 && !previousSessions.some((session) => session.mode === sessionMode) && sessionQueue.length === 0 && (
+        <p className="border-y py-1.5 text-xs text-muted-foreground">لا توجد مواضع سابقة بعد.</p>
+      )}
     </div>
   )
 
@@ -7667,7 +7840,7 @@ export function QuranPlayer() {
         <header
           ref={headerShellRef}
           className={cn(
-            "top-0 z-30 border-b bg-card/95 backdrop-blur transition-[transform,opacity] duration-200",
+            "top-0 z-30 border-b bg-card/95 backdrop-blur transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none",
             quietMode ? "fixed inset-x-0" : "sticky",
             readerFocusActive && "pointer-events-none -translate-y-full opacity-0",
           )}
@@ -8178,67 +8351,45 @@ export function QuranPlayer() {
             }
           }}
         >
-          <DialogContent className="max-w-sm" dir="rtl">
-            <DialogHeader className="text-right">
-              <DialogTitle>الآية {verseAction?.verseKey}</DialogTitle>
-              <DialogDescription className="line-clamp-2 font-quran text-base leading-8 text-foreground" data-quran-content>
+          <DialogContent className="max-w-md overflow-hidden bg-card p-0 shadow-xl" dir="rtl">
+            <DialogHeader className="border-b bg-secondary/25 px-5 py-4 text-right">
+              <DialogTitle className="flex items-center gap-2"><BookOpen className="size-4 text-primary" />الآية {verseAction?.verseKey}</DialogTitle>
+              <DialogDescription className="line-clamp-3 font-quran text-lg leading-9 text-foreground" data-quran-content>
                 {verseAction?.text}
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-2">
-              <Button className="justify-start" onClick={startActionVerseRecitation}>
-                <Mic />
-                بدء التسميع من هذه الآية
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={startActionVersePlayback}>
-                <Play />
+            <div className="space-y-4 px-4 py-4">
+              <Button className="h-12 w-full justify-center text-sm" autoFocus onClick={startActionVersePlayback}>
+                <Play className="fill-current" />
                 {hasVerseSynchronization
                   ? "بدء التلاوة من هذه الآية"
                   : `بدء تلاوة الحدر من أول ${recitationSyncScope === "chapter" ? "السورة" : "الصفحة"}`}
               </Button>
-              <Button variant="outline" className="justify-start" onClick={() => void copyActionVerse()}>
-                <Copy />
-                نسخ نص الآية
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={openTafsir}>
-                <BookOpen />
-                التفسير
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={() => void openMutashabihat()}>
-                <GitCompareArrows />
-                المتشابهات
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={beginVerseHighlight}>
-                <Highlighter />
-                {actionHighlight ? "تعديل الجزء المظلل" : "تظليل جزء من الآية"}
-              </Button>
-              {actionHighlight && (
-                <Button variant="ghost" className="justify-start text-destructive hover:text-destructive" onClick={removeActionHighlight}>
-                  <Eraser />
-                  إزالة التظليل
-                </Button>
-              )}
-              <div className="space-y-2 border-t pt-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Bookmark className={cn("size-4", actionBookmark && "fill-current text-primary")} />
-                  حفظ إشارة مرجعية
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" className="h-10 justify-start" onClick={startActionVerseRecitation}><Mic /> بدء التسميع</Button>
+                <Button variant="outline" className="h-10 justify-start" onClick={openTafsir}><BookOpen /> التفسير</Button>
+                <Button variant="outline" className="h-10 justify-start" onClick={() => void openMutashabihat()}><GitCompareArrows /> المتشابهات</Button>
+                <Button variant="outline" className="h-10 justify-start" onClick={() => void copyActionVerse()}><Copy /> نسخ الآية</Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 border-y py-3">
+                <Button variant="ghost" className="justify-start" onClick={addActionVerseToQueue}><ListPlus /> للجلسة القادمة</Button>
+                <Button variant="ghost" className="justify-start" onClick={addActionVerseToReview}><RotateCcw /> أضف للمراجعة</Button>
+                <Button variant="ghost" className="justify-start" onClick={beginVerseHighlight}><Highlighter /> {actionHighlight ? "تعديل التظليل" : "تظليل جزء"}</Button>
+                {actionHighlight ? (
+                  <Button variant="ghost" className="justify-start text-destructive hover:text-destructive" onClick={removeActionHighlight}><Eraser /> إزالة التظليل</Button>
+                ) : <span />}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <Bookmark className={cn("size-4", actionBookmark && "fill-current text-primary")} /> حفظ إشارة مرجعية
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {bookmarkCategories.map((category) => (
-                    <Button
-                      key={category.id}
-                      variant={actionBookmark?.category === category.id ? "secondary" : "outline"}
-                      size="sm"
-                      onClick={(event) => verseAction && saveBookmarkForVerse(verseAction, category.id, event.timeStamp)}
-                    >
+                    <Button key={category.id} variant={actionBookmark?.category === category.id ? "secondary" : "outline"} size="sm" onClick={(event) => verseAction && saveBookmarkForVerse(verseAction, category.id, event.timeStamp)}>
                       {category.label}
                     </Button>
                   ))}
-                  <Button
-                    variant={actionBookmark && !actionBookmark.category ? "secondary" : "outline"}
-                    size="sm"
-                    onClick={(event) => verseAction && saveBookmarkForVerse(verseAction, null, event.timeStamp)}
-                  >
+                  <Button variant={actionBookmark && !actionBookmark.category ? "secondary" : "outline"} size="sm" onClick={(event) => verseAction && saveBookmarkForVerse(verseAction, null, event.timeStamp)}>
                     بدون تصنيف
                   </Button>
                 </div>
@@ -8415,6 +8566,9 @@ export function QuranPlayer() {
                       </MutashabihatFollowingContext>
                     </section>
                   )}
+                  <Button variant="secondary" size="sm" className="w-full" onClick={queueMutashabihatGroup}>
+                    <ListPlus /> إضافة الآية ومتشابهاتها للجلسة القادمة
+                  </Button>
                   {mutashabihatData.totalSimilar && mutashabihatData.totalSimilar > mutashabihatData.similar.length && (
                     <p className="pb-1 text-center text-[10px] text-muted-foreground">
                       أعلى {mutashabihatData.similar.length} نتيجة من {mutashabihatData.totalSimilar}
@@ -8569,7 +8723,7 @@ export function QuranPlayer() {
 
         <main
           className={cn(
-            "mx-auto grid max-w-[1900px] gap-2 px-0 py-0 sm:px-2 sm:py-2 lg:px-3",
+            "mx-auto grid max-w-[1900px] gap-2 px-0 py-0 transition-[padding,max-width,background-color] duration-300 ease-out motion-reduce:transition-none sm:px-2 sm:py-2 lg:px-3",
             navigationOpen && !quietMode
               ? "lg:grid-cols-[380px_minmax(0,1fr)]"
               : "lg:grid-cols-1",
@@ -8946,7 +9100,7 @@ export function QuranPlayer() {
             <div
               ref={mushafStageRef}
               className={cn(
-                "relative mx-auto w-full max-w-[1080px] touch-pan-y",
+                "relative mx-auto w-full max-w-[1080px] touch-pan-y transition-[max-width,height,background-color] duration-300 ease-out motion-reduce:transition-none",
                 spreadMode === "double" && "xl:max-w-none",
                 viewMode === "text" && readingMode === "page" && "sm:max-w-none",
                 readerFocusActive && !isFullscreen && "flex h-dvh max-w-none flex-col overflow-hidden bg-background",
@@ -9071,7 +9225,7 @@ export function QuranPlayer() {
 
               <div
                 className={cn(
-                  "mx-auto grid w-full max-w-[1000px] gap-2",
+                  "mx-auto grid w-full max-w-[1000px] gap-2 transition-[height,max-width,transform] duration-300 ease-out motion-reduce:transition-none",
                   (readingMode === "large" || continuousPageAutoScroll) && viewMode === "text" && "hidden",
                   spreadMode === "double" && !isFullscreen && "lg:max-w-none lg:grid-cols-2",
                   viewMode === "text" && readingMode === "page" && "sm:max-w-none",
@@ -9088,8 +9242,10 @@ export function QuranPlayer() {
                 {/* Adaptive spacing owns height only; an aspect ratio here can widen the page past the phone viewport. */}
                 <div
                   ref={currentPageExportRef}
+                  data-reader-page-shell
                   className={cn(
-                    "relative justify-self-center",
+                    "relative justify-self-center transition-[width,height,max-width,transform] duration-300 ease-out motion-reduce:transition-none",
+                    readerFocusActive && "animate-in fade-in-0 zoom-in-95 duration-300 motion-reduce:animate-none",
                     adaptivePageSpacing
                       ? landscapeReadingMode
                         ? "w-full min-w-0 max-w-none"
@@ -9320,7 +9476,7 @@ export function QuranPlayer() {
           data-quran-player
           aria-label="مشغل تلاوة القرآن"
           className={cn(
-            "fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 shadow-[0_-8px_24px_rgba(28,45,38,0.08)] backdrop-blur transition-[transform,opacity] duration-200",
+            "fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 shadow-[0_-8px_24px_rgba(28,45,38,0.08)] backdrop-blur transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none",
             readerFocusActive && !landscapeFullscreenPlayer && !playerCollapsed && "pointer-events-none translate-y-full opacity-0",
             landscapeFullscreenPlayer && "z-[60]",
             playerCollapsed && "h-[12px] border-t-0 bg-transparent shadow-none backdrop-blur-none",
@@ -9597,9 +9753,19 @@ export function QuranPlayer() {
                 <span className="truncate">{selectedReciter.name} · {selectedReciter.detail}</span>
               </button>
               <span className="flex min-w-0 items-center justify-end gap-1 truncate text-left tabular-nums">
-                <span className="sr-only">سرعة التلاوة {speed} أضعاف</span>
-                <Gauge className="size-3 shrink-0 text-primary" aria-hidden="true" />
-                <span aria-hidden="true">{speed}×</span>
+                {boundedSessionActive ? (
+                  <>
+                    <span>صفحة {boundedSessionPagePosition}/{sessionCount}</span>
+                    <span>· دورة {currentCycle}/{repeatTarget}</span>
+                    {sessionRemainingSeconds !== null && <span>· متبقي {formatSessionDuration(sessionRemainingSeconds)}</span>}
+                  </>
+                ) : (
+                  <>
+                    <span className="sr-only">سرعة التلاوة {speed} أضعاف</span>
+                    <Gauge className="size-3 shrink-0 text-primary" aria-hidden="true" />
+                    <span aria-hidden="true">{speed}×</span>
+                  </>
+                )}
               </span>
             </div>
 

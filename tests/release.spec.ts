@@ -481,6 +481,36 @@ test("يعرض المصحف المفتوح في رأس الهاتف ويستخد
   await expect(page.getByRole("menuitem", { name: "ملء الشاشة" })).toBeVisible()
 })
 
+test("يجعل تلاوة الآية الإجراء الأساسي في قائمة الضغط المطول", async ({ page }) => {
+  await openMushaf(page)
+  await page.locator("[data-quran-text-page] [data-verse-key]").first().click({ button: "right" })
+
+  const dialog = page.getByRole("dialog")
+  const playback = dialog.getByRole("button", { name: /بدء التلاوة من هذه الآية/ })
+  await expect(playback).toBeVisible()
+  await expect(playback).toBeFocused()
+  await expect(dialog.getByRole("button", { name: "بدء التسميع" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "التفسير" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "المتشابهات" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "نسخ الآية" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "للجلسة القادمة" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "أضف للمراجعة" })).toBeVisible()
+})
+
+test("يخفي الواجهة ويكبر صفحة المصحف بانتقال خفيف عند ضغط الوسط", async ({ page }) => {
+  await openMushaf(page)
+  const header = page.getByRole("banner")
+  await expect(header).toHaveCSS("transition-duration", "0.3s")
+  const mushafPage = page.locator("[data-quran-text-page]").first()
+  const bounds = await mushafPage.boundingBox()
+  if (!bounds) throw new Error("تعذر قياس صفحة المصحف")
+
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  await expect(page.getByRole("button", { name: "العودة إلى واجهة المصحف" })).toBeVisible()
+  await expect(header).toHaveCSS("opacity", "0")
+  await expect(page.locator("[data-reader-page-shell]")).toHaveCSS("transition-duration", "0.3s")
+})
+
 test("يقترح اتجاه الجهاز ولا يطبقه إلا بعد الضغط", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, get: () => 1 })
@@ -906,6 +936,11 @@ test("يعرض تأخر مسار الختمة بالعربية والإنجلي�
   await page.getByRole("button", { name: /^الختمة/ }).first().click()
   const overdueStatus = page.locator('[data-khatma-overdue-days="4"]')
   await expect(overdueStatus).toHaveText("متأخر 4 أيام عن المقرر")
+  await page.getByRole("button", { name: "تعويض خلال 3 أيام" }).click()
+  const compensatedPlan = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
+  expect(compensatedPlan.completedPage).toBe(60)
+  expect(compensatedPlan.catchUpDays).toBe(3)
+  expect(compensatedPlan.catchUpPagesPerDay).toBeGreaterThan(0)
 
   await page.keyboard.press("Escape")
   await page.evaluate(() => window.localStorage.setItem("wird-interface-language-v1", "en"))
@@ -975,6 +1010,7 @@ test("يعيد جلسة الاستماع السابقة من بداية نطاق
   await page.getByRole("radio", { name: "استماع" }).click()
   const previousSession = page.getByRole("button", { name: /من صفحة 120 إلى صفحة 122/ })
   await expect(previousSession).toBeVisible()
+  await expect(page.getByRole("button", { name: /استئناف.*صفحة 122/ })).toBeVisible()
   await previousSession.click()
 
   await expect(page.getByLabel("صفحة 120 من المصحف الشريف")).toBeVisible()
