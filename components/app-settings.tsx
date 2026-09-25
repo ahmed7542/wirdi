@@ -1466,6 +1466,7 @@ export function AppSettings({
               onClick={() => {
                 onViewModeChange("image")
                 onReadingModeChange("page")
+                onLineSpacingChange("comfortable")
                 onLargeTextSizeChange(36)
                 onAudioReviewRevealModeChange("progressive")
                 onAutoScrollChange(true)

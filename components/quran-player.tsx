@@ -1230,7 +1230,7 @@ export function QuranPlayer() {
   const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null)
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [readingMode, setReadingMode] = useState<ReadingMode>("page")
-  const [lineSpacing, setLineSpacing] = useState<LineSpacing>("normal")
+  const [lineSpacing, setLineSpacing] = useState<LineSpacing>("comfortable")
   const [audioReviewRevealMode, setAudioReviewRevealMode] = useState<AudioReviewRevealMode>("progressive")
   const [wideReading, setWideReading] = useState(false)
   const [compactLandscape, setCompactLandscape] = useState(false)

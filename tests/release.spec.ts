@@ -534,6 +534,43 @@ test("يخفي الواجهة ويكبر صفحة المصحف بانتقال خ
   await expect(page.locator('[data-reader-chrome="player"]')).toHaveAttribute("data-reader-chrome-state", "visible")
 })
 
+test("يجعل التباعد المتوسط افتراضيًا ويرفع رقم الصفحة في ملء الصفحة", async ({ page }) => {
+  await openMushaf(page)
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  const spacingControl = page.locator('[aria-label="تباعد أسطر الصفحة الكاملة"]')
+  await expect(spacingControl.getByRole("radio", { name: "متوسط" })).toHaveAttribute("data-state", "on")
+  await page.getByRole("button", { name: "إغلاق الإعدادات" }).click()
+
+  await page.evaluate(() => {
+    window.localStorage.setItem("wird-last-reading-v1", JSON.stringify({
+      page: 120,
+      positionMs: 0,
+      reciter: 6,
+      viewMode: "text",
+      readingMode: "page",
+      updatedAt: Date.now(),
+    }))
+    window.localStorage.setItem("wird-player-settings", JSON.stringify({
+      viewMode: "text",
+      readingMode: "page",
+      lineSpacing: "spacious",
+    }))
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await page.getByRole("button", { name: /فتح البحث والتنقل/ }).click()
+  await page.locator('input[aria-label="البحث السريع في القرآن"]:visible').fill("120")
+  await page.locator('button[data-search-id="page-120"]:visible').click()
+  await expect(page.getByLabel("صفحة 120 من المصحف الشريف")).toBeVisible()
+
+  const clearance = await page.evaluate(() => {
+    const pageNumber = document.querySelector<HTMLElement>("[data-qcf-page-number]")?.getBoundingClientRect()
+    const player = document.querySelector<HTMLElement>("[data-quran-player]")?.getBoundingClientRect()
+    if (!pageNumber || !player) throw new Error("تعذر قياس رقم الصفحة أو المشغل")
+    return player.top - pageNumber.bottom
+  })
+  expect(clearance).toBeGreaterThanOrEqual(8)
+})
+
 test("يقترح اتجاه الجهاز ولا يطبقه إلا بعد الضغط", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, get: () => 1 })

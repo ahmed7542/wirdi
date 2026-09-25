@@ -1045,7 +1045,7 @@ export function QuranTextPage({
             "font-sans pointer-events-none absolute z-[2] bg-[var(--mushaf-paper)] px-1 text-[11px] font-bold leading-none tabular-nums text-[var(--mushaf-meta)] sm:text-[12px]",
             page > 2 && lineSpacing === "normal" && "bottom-[0.65cqw]",
             page > 2 && lineSpacing === "comfortable" && "bottom-[0.4cqw]",
-            page > 2 && lineSpacing === "spacious" && "bottom-[0.2cqw]",
+            page > 2 && lineSpacing === "spacious" && "bottom-[max(1.2cqw,0.7rem)]",
             page <= 2 && "bottom-[0.65cqw]",
             page % 2 === 1
               ? "right-[var(--qcf-text-inset,2.8cqw)]"
