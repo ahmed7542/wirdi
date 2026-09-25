@@ -670,6 +670,9 @@ test("يخفي الواجهة ويكبر صفحة المصحف بانتقال خ
     Object.assign(window, { __wirdReaderChromeStates: states })
   })
   await page.getByRole("button", { name: "العودة إلى واجهة المصحف" }).click()
+  await expect(header).toHaveAttribute("data-reader-chrome-state", "revealing")
+  await page.waitForTimeout(300)
+  const returningBounds = await page.locator("[data-reader-page-shell]").boundingBox()
   const transitionStates = await page.evaluate(() => (
     window as typeof window & { __wirdReaderChromeStates: string[] }
   ).__wirdReaderChromeStates)
@@ -678,6 +681,15 @@ test("يخفي الواجهة ويكبر صفحة المصحف بانتقال خ
   await expect(header).toHaveCSS("opacity", "1")
   await expect(header).toHaveAttribute("data-reader-chrome-state", "visible")
   await expect(page.locator('[data-reader-chrome="player"]')).toHaveAttribute("data-reader-chrome-state", "visible")
+  const restoredBounds = await page.locator("[data-reader-page-shell]").boundingBox()
+  expect(Math.abs(restoredBounds!.y - returningBounds!.y)).toBeLessThanOrEqual(2)
+  expect(Math.abs(restoredBounds!.height - returningBounds!.height)).toBeLessThanOrEqual(2)
+  await expect.poll(() => page.locator("[data-reader-layout-state]").evaluate((layout) => {
+    const quranPage = layout.querySelector<HTMLElement>("[data-quran-text-page]")
+    return quranPage
+      ? getComputedStyle(layout).backgroundColor === getComputedStyle(quranPage).backgroundColor
+      : false
+  })).toBe(true)
 })
 
 test("يجعل التباعد المتوسط افتراضيًا ويرفع رقم الصفحة في ملء الصفحة", async ({ page }) => {
@@ -822,6 +834,9 @@ test("يثبت قياسات تبويبات الإعدادات وينقل الل�
   const languageOptions = languageSettings.locator("[data-language-option]")
 
   const assertTabGeometry = async (expectedFontSize: string) => {
+    await expect.poll(() => settingsTabs.getByRole("tab").first().evaluate(
+      (tab) => getComputedStyle(tab).fontSize,
+    )).toBe(expectedFontSize)
     const listBox = (await settingsTabs.boundingBox())!
     const tabBoxes = await settingsTabs.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => {
       const tabBox = tab.getBoundingClientRect()
@@ -1328,7 +1343,9 @@ test("يوزع مشغل الهاتف ويغير موضع سهم الطي", async
   const collapse = await collapseButton.boundingBox()
   const collapseIndicator = await collapseButton.locator("span").boundingBox()
   const collapseColor = await collapseButton.locator("span").evaluate((indicator) => getComputedStyle(indicator).backgroundColor)
-  const play = await page.getByRole("button", { name: "تشغيل", exact: true }).boundingBox()
+  const playButton = page.getByRole("button", { name: "تشغيل", exact: true })
+  const play = await playButton.boundingBox()
+  const playIcon = await playButton.locator("svg").boundingBox()
   const progress = await page.getByRole("progressbar", { name: "تقدم جلسة التلاوة من اليمين إلى اليسار" }).boundingBox()
   const player = await page.locator("[data-quran-player]").boundingBox()
   const reciter = await page.locator('button[aria-label^="اختيار القارئ، الحالي"]:visible').first().boundingBox()
@@ -1348,6 +1365,12 @@ test("يوزع مشغل الهاتف ويغير موضع سهم الطي", async
   expect(Math.abs(collapseIndicator!.y - player!.y)).toBeLessThanOrEqual(2)
   expect(collapseColor).not.toBe("rgba(0, 0, 0, 0)")
   expect(reciter?.height).toBeGreaterThanOrEqual(24)
+  expect(play?.width).toBeLessThanOrEqual(40)
+  expect(play?.height).toBeLessThanOrEqual(40)
+  expect(playIcon?.width).toBeLessThanOrEqual(18)
+  expect(playIcon?.height).toBeLessThanOrEqual(18)
+  expect(player?.height).toBeLessThanOrEqual(92)
+  await expect(page.getByText("1×", { exact: true })).toHaveCount(1)
   expect(Math.abs((play!.x + play!.width / 2) - viewportCenter)).toBeLessThanOrEqual(1)
   expect(Math.min(...gaps)).toBeGreaterThanOrEqual(32)
   expect(progress!.y).toBeLessThanOrEqual(player!.y)
@@ -1516,6 +1539,12 @@ test("يثبت هندسة صفحات التمرير في ملء الشاشة م�
   await page.getByRole("button", { name: "إيقاف التمرير التلقائي مؤقتًا" }).click()
   await page.getByRole("button", { name: "عرض المصحف بملء الشاشة" }).first().click()
   await expect(page.getByRole("button", { name: "العودة إلى واجهة المصحف" })).toBeVisible()
+  await expect.poll(() => page.locator("[data-mushaf-stage]").evaluate((stage) => {
+    const pageElement = stage.querySelector<HTMLElement>("[data-quran-text-page]")
+    return pageElement
+      ? getComputedStyle(stage).backgroundColor === getComputedStyle(pageElement).backgroundColor
+      : false
+  })).toBe(true)
 
   const geometry = await page.locator('[data-large-reading-page="120"], [data-large-reading-page="121"]')
     .evaluateAll((wrappers) => wrappers.map((wrapper) => {

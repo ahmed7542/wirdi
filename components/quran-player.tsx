@@ -1233,8 +1233,9 @@ export function QuranPlayer() {
   const landscapeFullscreenPlayer = isFullscreen && landscapeReadingMode && !practiceActive
   const fullscreenLineReading = landscapeFullscreenPlayer && viewMode === "text" && readingMode === "page"
   const adaptivePageSpacing = viewMode === "text" && readingMode === "page" && lineSpacing !== "normal"
-  const fullscreenSpaciousPage = isFullscreen && adaptivePageSpacing && lineSpacing === "spacious"
-  const fullscreenComfortablePage = isFullscreen && adaptivePageSpacing && lineSpacing === "comfortable"
+  const focusedPageLayout = isFullscreen || readerFocusActive
+  const fullscreenSpaciousPage = focusedPageLayout && adaptivePageSpacing && lineSpacing === "spacious"
+  const fullscreenComfortablePage = focusedPageLayout && adaptivePageSpacing && lineSpacing === "comfortable"
   const lineReadingLayout = fullscreenLineReading || (wideReading && (!isFullscreen || compactLandscape))
   const continuousPageReading = viewMode === "text" && readingMode === "page" && (wideReading || landscapeReadingMode)
   const continuousPageAutoScroll = continuousAutoScroll && continuousPageReading
@@ -4639,13 +4640,13 @@ export function QuranPlayer() {
   const toggleFullscreen = async () => {
     if (readerFocusActive || isFullscreen || document.fullscreenElement) {
       fullscreenExitInProgressRef.current = true
-      revealReaderChrome()
-      setIsFullscreen(false)
       try {
         if (document.fullscreenElement) await document.exitFullscreen()
       } catch {
         // The in-app fallback still exits through the same chrome transition.
       } finally {
+        setIsFullscreen(false)
+        revealReaderChrome()
         fullscreenExitInProgressRef.current = false
       }
       return
@@ -4698,20 +4699,18 @@ export function QuranPlayer() {
     }
   }
 
-  const leaveRecitationFullscreen = () => {
+  const leaveRecitationFullscreen = async () => {
     chromePanelsRef.current = { navigation: false, session: false, marks: false }
     fullscreenExitInProgressRef.current = true
-    revealReaderChrome(false)
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {
-        // The in-app fullscreen state still exits below.
-      }).finally(() => {
-        fullscreenExitInProgressRef.current = false
-      })
-    } else {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+    } catch {
+      // The in-app fullscreen state still exits below.
+    } finally {
+      setIsFullscreen(false)
+      revealReaderChrome(false)
       fullscreenExitInProgressRef.current = false
     }
-    setIsFullscreen(false)
   }
 
   const handleImageCenterTap = (event: MouseEvent<HTMLDivElement>) => {
@@ -9006,14 +9005,21 @@ export function QuranPlayer() {
         <main
           className={cn(
             "mx-auto grid max-w-[1900px] gap-2 px-0 py-0 transition-[padding,max-width,background-color] duration-300 ease-out motion-reduce:transition-none sm:px-2 sm:py-2 lg:px-3",
+            readerChromeState === "revealing" && "transition-[padding,max-width,background-color,transform]",
             navigationOpen && !quietMode
               ? "lg:grid-cols-[380px_minmax(0,1fr)]"
               : "lg:grid-cols-1",
             readerFocusActive && "fixed inset-0 z-20 block max-w-none overflow-hidden p-0",
             !practiceActive && !readerFocusActive && !dashboardOpen &&
               "max-sm:min-h-[calc(100dvh-48px)] max-sm:pb-[var(--wird-player-height,96px)]",
+            !practiceActive && !dashboardOpen && viewMode === "text" && readingMode === "page" &&
+              "max-sm:bg-[var(--mushaf-paper)]",
             dashboardOpen && "hidden",
           )}
+          data-reader-layout-state={readerChromeState}
+          style={readerChromeState === "revealing"
+            ? { transform: "translateY(var(--wird-header-height, 48px))" }
+            : undefined}
         >
           {mobileWorkspaceOpen && !quietMode && (
             <div className="flex items-center border-b bg-card lg:hidden" dir="rtl">
@@ -9385,14 +9391,15 @@ export function QuranPlayer() {
                 "relative mx-auto w-full max-w-[1080px] touch-pan-y transition-[max-width,height,background-color] duration-300 ease-out motion-reduce:transition-none",
                 spreadMode === "double" && "xl:max-w-none",
                 viewMode === "text" && readingMode === "page" && "sm:max-w-none",
-                readerFocusActive && !isFullscreen && "flex h-dvh max-w-none flex-col overflow-hidden bg-background",
-                isFullscreen && "fixed inset-0 z-50 flex h-dvh max-w-none flex-col overflow-hidden bg-background",
+                readerFocusActive && !isFullscreen && "flex h-dvh max-w-none flex-col overflow-hidden bg-[var(--mushaf-paper)]",
+                isFullscreen && "fixed inset-0 z-50 flex h-dvh max-w-none flex-col overflow-hidden bg-[var(--mushaf-paper)]",
                 viewMode === "text" && readingMode === "page" && "sm:overflow-x-hidden sm:overflow-y-auto sm:overscroll-contain",
                 isFullscreen && adaptivePageSpacing && "overflow-x-hidden overflow-y-auto overscroll-contain",
                 adaptivePageSpacing && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                 lineReadingLayout && readerFocusActive && viewMode === "text" && readingMode === "page" && "block overflow-x-hidden overflow-y-auto overscroll-contain",
                 fullscreenLineReading && "pb-[var(--wird-player-height,48px)]",
               )}
+              data-mushaf-stage
               data-quran-scroll-container={lineReadingLayout && readerFocusActive ? "" : undefined}
               onClickCapture={(event) => {
                 if (Date.now() < suppressPageClickUntilRef.current) {
@@ -9540,8 +9547,8 @@ export function QuranPlayer() {
                         : "w-full min-w-0 max-w-none"
                       : "w-full",
                     pageSwipeDirection !== 0 && "isolate overflow-hidden",
-                    adaptivePageSpacing && !isFullscreen && lineSpacing === "comfortable" && "h-[max(calc(100dvh-var(--wird-header-height,48px)-var(--wird-player-height,96px)-clamp(2rem,7dvh,5rem)),160.714vw)]",
-                    adaptivePageSpacing && !isFullscreen && lineSpacing === "spacious" && "h-[max(calc(100dvh-var(--wird-header-height,48px)-var(--wird-player-height,96px)),160.714vw)]",
+                    adaptivePageSpacing && !focusedPageLayout && lineSpacing === "comfortable" && "h-[max(calc(100dvh-var(--wird-header-height,48px)-var(--wird-player-height,96px)-clamp(2rem,7dvh,5rem)),160.714vw)]",
+                    adaptivePageSpacing && !focusedPageLayout && lineSpacing === "spacious" && "h-[max(calc(100dvh-var(--wird-header-height,48px)-var(--wird-player-height,96px)),160.714vw)]",
                     fullscreenComfortablePage && !landscapeReadingMode && "h-[max(calc(100dvh-var(--wird-player-height,0px)-clamp(2rem,7dvh,5rem)),160.714vw)]",
                     fullscreenSpaciousPage && !landscapeReadingMode && "h-[max(calc(100dvh-var(--wird-player-height,0px)),160.714vw)]",
                     fullscreenComfortablePage && landscapeReadingMode && "h-[max(calc(100dvh-var(--wird-player-height,0px)-clamp(2rem,7dvh,5rem)),160.714vw)]",
@@ -10019,7 +10026,7 @@ export function QuranPlayer() {
             </div>
           ) : (
           <div className={cn(
-            "mx-auto max-w-[1500px] px-[4px] pt-[18px] pb-[max(0.45rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-3 lg:px-8",
+            "mx-auto max-w-[1500px] px-[4px] pt-4 pb-[max(0.35rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-3 lg:px-8",
             largeControls && "max-sm:px-[4px]",
             compactPlaybackChrome && "px-2 pt-[12px] pb-[max(0.25rem,env(safe-area-inset-bottom))] sm:px-3 sm:pt-[10px] sm:pb-1 lg:px-4",
             playerCollapsed && "hidden",
@@ -10032,7 +10039,11 @@ export function QuranPlayer() {
               )}
               aria-label="تقدم جلسة التلاوة من اليمين إلى اليسار"
             />
-            <div className={cn("mb-1 grid min-w-0 grid-cols-2 items-center gap-2 px-0.5 text-[9px] text-muted-foreground sm:text-[11px]", (playerCollapsed || compactPlaybackChrome) && "hidden")}>
+            <div className={cn(
+              "mb-1 grid min-w-0 items-center gap-2 px-0.5 text-[9px] text-muted-foreground sm:text-[11px]",
+              boundedSessionActive ? "grid-cols-2" : "grid-cols-1",
+              (playerCollapsed || compactPlaybackChrome) && "hidden",
+            )}>
               <button
                 type="button"
                 className="flex min-h-6 min-w-0 items-center gap-1 text-right hover:text-foreground"
@@ -10044,21 +10055,13 @@ export function QuranPlayer() {
                 <Headphones className="size-3 shrink-0 text-primary" />
                 <span className="truncate">{selectedReciter.name} · {selectedReciter.detail}</span>
               </button>
-              <span className="flex min-w-0 items-center justify-end gap-1 truncate text-left tabular-nums">
-                {boundedSessionActive ? (
-                  <>
-                    <span>صفحة {boundedSessionPagePosition}/{sessionCount}</span>
-                    <span>· دورة {currentCycle}/{repeatTarget}</span>
-                    {sessionRemainingSeconds !== null && <span>· متبقي {formatSessionDuration(sessionRemainingSeconds)}</span>}
-                  </>
-                ) : (
-                  <>
-                    <span className="sr-only">سرعة التلاوة {speed} أضعاف</span>
-                    <Gauge className="size-3 shrink-0 text-primary" aria-hidden="true" />
-                    <span aria-hidden="true">{speed}×</span>
-                  </>
-                )}
-              </span>
+              {boundedSessionActive && (
+                <span className="flex min-w-0 items-center justify-end gap-1 truncate text-left tabular-nums">
+                  <span>صفحة {boundedSessionPagePosition}/{sessionCount}</span>
+                  <span>· دورة {currentCycle}/{repeatTarget}</span>
+                  {sessionRemainingSeconds !== null && <span>· متبقي {formatSessionDuration(sessionRemainingSeconds)}</span>}
+                </span>
+              )}
             </div>
 
             <div
@@ -10079,7 +10082,7 @@ export function QuranPlayer() {
                 ) : renderPlayerVolumeControl()}
               </div>
 
-              <div data-mobile-player-center className="grid w-full grid-cols-[minmax(28px,1fr)_48px_minmax(28px,1fr)] items-center justify-items-center gap-1 sm:grid-cols-[40px_64px_40px] sm:gap-2">
+              <div data-mobile-player-center className="grid w-full grid-cols-[minmax(28px,1fr)_40px_minmax(28px,1fr)] items-center justify-items-center gap-1 sm:grid-cols-[40px_52px_40px] sm:gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -10103,12 +10106,15 @@ export function QuranPlayer() {
                 </Tooltip>
                 <Button
                   size="icon-lg"
-                  className={cn("z-10 size-12 rounded-full sm:size-12", compactPlaybackChrome && "sm:size-8")}
+                  data-player-primary-control
+                  className={cn("z-10 size-10 rounded-full", compactPlaybackChrome && "size-8")}
                   aria-label={isPlaying ? "إيقاف مؤقت" : "تشغيل"}
                   disabled={Boolean(error)}
                   onClick={() => void togglePlayback()}
                 >
-                  {isPlaying ? <Pause className="fill-current" /> : <Play className="translate-x-px fill-current" />}
+                  {isPlaying
+                    ? <Pause className="size-[18px] fill-current" />
+                    : <Play className="size-[18px] translate-x-px fill-current" />}
                 </Button>
                 <Tooltip>
                   <TooltipTrigger asChild>
