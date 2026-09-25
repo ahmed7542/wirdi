@@ -1091,7 +1091,7 @@ export function AppSettings({
       >
         <SheetHeader className="flex flex-row items-start justify-between gap-4 border-b px-5 py-4 text-right">
           <div className="min-w-0 space-y-1 text-right">
-            <SheetTitle>إعدادات وِرد</SheetTitle>
+            <SheetTitle>إعدادات وِردي</SheetTitle>
             <SheetDescription>المظهر والقراءة والعلامات والتخزين دون اتصال</SheetDescription>
           </div>
           <Button
@@ -1413,6 +1413,7 @@ export function AppSettings({
                     key={option.id}
                     htmlFor={`palette-${option.id}`}
                     title={option.label}
+                    data-palette-option={option.id}
                     className={cn(
                       "grid size-9 cursor-pointer place-items-center rounded-full border p-1 transition-colors hover:bg-accent/40",
                       palette === option.id && "border-primary bg-primary/5 text-primary ring-1 ring-primary/25",
@@ -1950,7 +1951,7 @@ export function AppSettings({
               <div className="mb-3 grid size-14 place-items-center rounded-md bg-primary text-primary-foreground">
                 {isInstalled ? <CheckCircle2 className="size-7" /> : <Smartphone className="size-7" />}
               </div>
-              <h3 className="font-bold">{isInstalled ? "وِرد مثبت على الجهاز" : "تثبيت وِرد"}</h3>
+              <h3 className="font-bold">{isInstalled ? "وِردي مثبت على الجهاز" : "تثبيت وِردي"}</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 {isInstalled ? "يفتح كتطبيق مستقل" : "وصول أسرع وتشغيل واجهة التطبيق دون اتصال"}
               </p>
@@ -2100,7 +2101,7 @@ export function AppSettings({
     >
       <AlertDialogContent dir="rtl">
         <AlertDialogHeader className="text-right">
-          <AlertDialogTitle>استعادة نسخة وِرد</AlertDialogTitle>
+          <AlertDialogTitle>استعادة نسخة وِردي</AlertDialogTitle>
           <AlertDialogDescription>
             ستستبدل النسخة البيانات المحلية الحالية. لا تشمل العملية ملفات التلاوة المنزلة.
           </AlertDialogDescription>

@@ -278,10 +278,10 @@ async function buildPdf(
 ) {
   const pdfDocument = await PDFDocument.create()
   pdfDocument.registerFontkit(fontkit)
-  pdfDocument.setTitle(`ورد - صفحة ${pageNumber}`)
+  pdfDocument.setTitle(`وِردي - صفحة ${pageNumber}`)
   pdfDocument.setSubject("صفحة متجهية من المصحف الشريف")
-  pdfDocument.setCreator("ورد")
-  pdfDocument.setProducer("ورد")
+  pdfDocument.setCreator("وِردي")
+  pdfDocument.setProducer("وِردي")
 
   const embeddedFonts = new Map<string, PDFFont>()
   await Promise.all([...resources.entries()].map(async ([url, resource]) => {

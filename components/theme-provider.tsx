@@ -11,7 +11,7 @@ import {
 } from "react"
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes"
 
-export type AppPalette = "olive" | "turquoise" | "gold" | "blue" | "beige" | "charcoal" | "custom"
+export type AppPalette = "olive" | "navy-gold" | "turquoise" | "gold" | "blue" | "beige" | "charcoal" | "custom"
 
 export type CustomPalette = {
   primary: string
@@ -24,6 +24,7 @@ export const APP_PALETTES: Array<{
   label: string
   swatches: [string, string, string]
 }> = [
+  { id: "navy-gold", label: "كحلي ذهبي", swatches: ["bg-[#203f62]", "bg-[#c7a94e]", "bg-[#f5f5f2]"] },
   { id: "olive", label: "زيتوني", swatches: ["bg-[#276653]", "bg-[#b89a4d]", "bg-[#f5f1e7]"] },
   { id: "turquoise", label: "فيروزي", swatches: ["bg-[#087f8c]", "bg-[#58a99e]", "bg-[#f2f8f7]"] },
   { id: "gold", label: "ذهبي معتّق", swatches: ["bg-[#b58a28]", "bg-[#e0c66f]", "bg-[#f5ead2]"] },
@@ -36,6 +37,7 @@ export const APP_PALETTES: Array<{
 const PALETTE_STORAGE_KEY = "wird-color-palette-v1"
 const PALETTE_THEME_COLORS: Record<Exclude<AppPalette, "custom">, { light: string; dark: string }> = {
   olive: { light: "#276653", dark: "#182821" },
+  "navy-gold": { light: "#203f62", dark: "#101923" },
   turquoise: { light: "#087f8c", dark: "#16363b" },
   gold: { light: "#b58a28", dark: "#4b3b20" },
   blue: { light: "#3f65ad", dark: "#202a42" },
@@ -189,10 +191,14 @@ function clearCustomPalette() {
   for (const property of customProperties) document.documentElement.style.removeProperty(property)
 }
 
-function syncThemeColor(palette: AppPalette, customPalette = readCustomPalette()) {
+function syncThemeColor(
+  palette: AppPalette,
+  customPalette = readCustomPalette(),
+  isDark = document.documentElement.classList.contains("dark"),
+) {
   const color = palette === "custom"
     ? customPalette.primary
-    : PALETTE_THEME_COLORS[palette][document.documentElement.classList.contains("dark") ? "dark" : "light"]
+    : PALETTE_THEME_COLORS[palette][isDark ? "dark" : "light"]
   document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
     meta.content = color
   })
@@ -245,7 +251,7 @@ function PaletteProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    syncThemeColor(palette, customPalette)
+    syncThemeColor(palette, customPalette, resolvedTheme === "dark")
   }, [customPalette, palette, resolvedTheme])
 
   const value = useMemo(

@@ -214,7 +214,7 @@ test("يقدم تطابق عبارة الآية ويرتب التطابقات ا
   expect(connectedVerseKeys.slice(0, 4)).toEqual(expectedConnectedVerseKeys)
 })
 
-test("يقدم الإجراء اليومي وينظم العلامات الكثيرة في لوحة وِرد", async ({ page }) => {
+test("يقدم الإجراء اليومي وينظم العلامات الكثيرة في لوحة وِردي", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("wird-bookmarks", JSON.stringify([
       { id: "mark-1", page: 1, verseKey: "1:1", chapterId: 1, chapterName: "الفاتحة", positionMs: 0, reciter: 6, createdAt: 6 },
@@ -226,7 +226,7 @@ test("يقدم الإجراء اليومي وينظم العلامات الكث�
     ]))
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
 
   const today = page.locator('[data-dashboard-section="today"]')
   const plans = page.locator('[data-dashboard-section="plans"]')
@@ -320,7 +320,7 @@ test("يوحد اقتراحات الرقم المفرد بين البحث الع
   for (const id of expectedIds) await expect(page.locator(`button[data-search-id="${id}"]:visible`)).toBeVisible()
   await page.getByRole("button", { name: "إغلاق البحث السريع" }).click()
 
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("combobox", { name: "البحث والانتقال في المصحف" }).click()
   await page.getByLabel("البحث في المصحف").fill("5")
   for (const id of expectedIds) await expect(page.locator(`button[data-search-id="${id}"]:visible`)).toBeVisible()
@@ -476,7 +476,7 @@ test("يوضح منتقي الموضع ويقدم إجراء اليوم قبل �
     window.localStorage.removeItem("wird-learning-plan-v1")
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
 
   const picker = page.getByRole("combobox", { name: "البحث والانتقال في المصحف" })
   const plans = page.getByRole("heading", { name: "الخطط", exact: true })
@@ -513,7 +513,7 @@ test("ينشئ خطة مستقلة لكل نوع ويبعد الإغلاق عن 
     window.localStorage.removeItem("wird-learning-plan-v1")
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("button", { name: /^خطط الحفظ والمراجعة/ }).click()
 
   const learningDialog = page.getByRole("dialog")
@@ -554,7 +554,7 @@ test("يرحّل خطة المستخدم السابقة دون فقد التقد
     }))
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await expect(page.getByRole("button", { name: /خطط الحفظ والمراجعة.*1 من 3.*تثبيت/ })).toBeVisible()
   await page.getByRole("button", { name: /^خطط الحفظ والمراجعة/ }).click()
 
@@ -573,22 +573,22 @@ test("يرحّل خطة المستخدم السابقة دون فقد التقد
 
 test("يفتح آخر نسخة احتياطية على خيارات النسخ الاحتياطي", async ({ page }) => {
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("button", { name: "فتح إعدادات النسخ الاحتياطي" }).click()
 
-  await expect(page.getByRole("heading", { name: "إعدادات وِرد" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "إعدادات وِردي" })).toBeVisible()
   await expect(page.getByRole("tab", { name: "التطبيق" })).toHaveAttribute("data-state", "active")
   await expect(page.locator("[data-backup-settings]")).toBeVisible()
 })
 
 test("يعرض المصحف المفتوح في رأس الهاتف ويستخدم أهداف لمس أوضح", async ({ page }) => {
   await openMushaf(page)
-  const appButton = page.getByRole("button", { name: "فتح لوحة وِرد" })
-  await expect(appButton.locator("svg.lucide-book-open")).toHaveCount(1)
+  const appButton = page.getByRole("button", { name: "فتح لوحة وِردي" })
+  await expect(appButton.locator("[data-app-icon]")).toHaveCount(1)
   const settingsButton = page.getByRole("button", { name: "إعدادات التطبيق" })
   await expect(settingsButton.locator("svg.lucide-settings")).toHaveCount(1)
   expect((await settingsButton.boundingBox())!.x).toBeLessThanOrEqual(12)
-  const labels = ["فتح لوحة وِرد", "أدوات القراءة", "إعدادات التطبيق", "المزيد من أدوات الصفحة"]
+  const labels = ["فتح لوحة وِردي", "أدوات القراءة", "إعدادات التطبيق", "المزيد من أدوات الصفحة"]
   for (const label of labels) {
     const bounds = await page.getByRole("button", { name: label }).boundingBox()
     expect(bounds?.width).toBeGreaterThanOrEqual(36)
@@ -767,15 +767,15 @@ test("يبقي أخطاء التلاوة داخل المشغل مع إعادة �
 test("تخلو واجهتا القراءة واللوحة من مخالفات Axe", async ({ page }) => {
   await openMushaf(page)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
-  await expect(page.getByRole("heading", { name: "لوحة وِرد" })).toBeAttached()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
+  await expect(page.getByRole("heading", { name: "لوحة وِردي" })).toBeAttached()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })
 
 test("يحمل الإعدادات عند الطلب ويحافظ على تباين التبويبات", async ({ page }) => {
   await openMushaf(page)
   await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
-  await expect(page.getByRole("heading", { name: "إعدادات وِرد" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "إعدادات وِردي" })).toBeVisible()
   await expect(page.getByRole("button", { name: "عرض المصحف" })).toHaveAttribute("data-state", "open")
   await expect(page.getByRole("button", { name: "التشغيل والمتابعة" })).toBeVisible()
   await expect(page.getByRole("button", { name: "إمكانية الوصول" })).toBeVisible()
@@ -945,8 +945,8 @@ test("يوضح التثبيت اليدوي عندما لا يدعمه المتص
 })
 
 test("يقترح فتح تبويب مستقل من المعاينة المضمّنة", async ({ page }) => {
-  await page.setContent('<iframe title="معاينة وِرد" src="http://127.0.0.1:3000/" style="width:390px;height:844px"></iframe>')
-  const preview = page.frameLocator('iframe[title="معاينة وِرد"]')
+  await page.setContent('<iframe title="معاينة وِردي" src="http://127.0.0.1:3000/" style="width:390px;height:844px"></iframe>')
+  const preview = page.frameLocator('iframe[title="معاينة وِردي"]')
   await expect(preview.locator("[data-qcf-line]").first()).toBeVisible()
   await preview.getByRole("button", { name: "إعدادات التطبيق" }).click()
   await preview.getByRole("tab", { name: "التطبيق" }).click()
@@ -954,9 +954,10 @@ test("يقترح فتح تبويب مستقل من المعاينة المضمّ
   await expect(preview.getByRole("button", { name: "فتح في تبويب مستقل" })).toBeVisible()
 })
 
-test("يثبت الثيم المختار قبل تشغيل الواجهة", async ({ page }) => {
+test("يثبت ثيم الهوية المختار قبل تشغيل الواجهة في الوضعين", async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.setItem("wird-color-palette-v1", "beige")
+    window.localStorage.setItem("wird-color-palette-v1", "navy-gold")
+    window.localStorage.setItem("theme", "light")
     const paletteChanges: Array<string | null> = []
     Object.assign(window, { __wirdPaletteChanges: paletteChanges })
     new MutationObserver(() => {
@@ -971,13 +972,54 @@ test("يثبت الثيم المختار قبل تشغيل الواجهة", asyn
     themeColors: [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')]
       .map((meta) => meta.content),
   }))
-  expect(themeState.palette).toBe("beige")
+  expect(themeState.palette).toBe("navy-gold")
   expect(themeState.changes).not.toContain("olive")
-  expect(themeState.themeColors.every((color) => color === "#806b58")).toBeTruthy()
+  expect(themeState.themeColors.every((color) => color === "#203f62")).toBeTruthy()
+  const appLogo = page.locator("[data-app-icon]")
+  await expect.poll(() => appLogo.evaluate((mark) => {
+    const toRgb = (color: string) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 1
+      canvas.height = 1
+      const context = canvas.getContext("2d")!
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+      const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+      return `rgb(${red}, ${green}, ${blue})`
+    }
+    return {
+      mark: toRgb(getComputedStyle(mark).backgroundColor),
+      surface: toRgb(getComputedStyle(mark.parentElement!).backgroundColor),
+    }
+  })).toEqual({ mark: "rgb(32, 63, 98)", surface: "rgb(0, 0, 0)" })
 
   await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByText("ليلي", { exact: true }).click()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+  await expect.poll(async () => page.locator('meta[name="theme-color"]').first().getAttribute("content"))
+    .toBe("#101923")
+  await expect.poll(() => appLogo.evaluate((mark) => {
+    const toRgb = (color: string) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 1
+      canvas.height = 1
+      const context = canvas.getContext("2d")!
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+      const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+      return `rgb(${red}, ${green}, ${blue})`
+    }
+    return {
+      mark: toRgb(getComputedStyle(mark).backgroundColor),
+      surface: toRgb(getComputedStyle(mark.parentElement!).backgroundColor),
+    }
+  })).toEqual({ mark: "rgb(214, 185, 98)", surface: "rgb(0, 0, 0)" })
+
   await page.getByRole("button", { name: "الألوان" }).click()
-  await expect(page.getByRole("radio", { name: "بيج هادئ" })).toBeChecked()
+  const identityPaletteOption = page.locator('[data-palette-option="navy-gold"]')
+  await expect(identityPaletteOption).toBeVisible()
+  await expect(identityPaletteOption.locator("span > span")).toHaveCount(3)
+  await expect(page.getByRole("radio", { name: "كحلي ذهبي" })).toBeChecked()
 })
 
 test("يسمح بمسح مدخلات أرقام الخطط ثم يثبت القيم الجديدة", async ({ page }) => {
@@ -986,7 +1028,7 @@ test("يسمح بمسح مدخلات أرقام الخطط ثم يثبت الق�
     window.localStorage.removeItem("wird-learning-plan-v1")
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.locator("button").filter({ hasText: "إنشاء مسار ختمة" }).click()
 
   const duration = page.getByLabel("المدة بالأيام")
@@ -1007,7 +1049,7 @@ test("يسمح بمسح مدخلات أرقام الخطط ثم يثبت الق�
   await expect(khatmaPages).toHaveAttribute("inputmode", "numeric")
   await page.keyboard.press("Escape")
 
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("button", { name: /^خطط الحفظ والمراجعة/ }).click()
   await page.getByText("مقدار يومي", { exact: true }).click()
   const activityPages = page.getByLabel("صفحات كل يوم نشاط")
@@ -1048,7 +1090,7 @@ test("يحفظ آخر صفحة مرئية من مقرر الختمة مع بقا
     }))
   })
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("button", { name: /^الختمة/ }).first().click()
   await expect(page.getByText("صفحة 5 إلى 7")).toBeVisible()
   await page.getByRole("button", { name: "افتح مقرر اليوم" }).click()
@@ -1065,7 +1107,7 @@ test("يحفظ آخر صفحة مرئية من مقرر الختمة مع بقا
   await expect(page.locator("[data-continuous-reader-bar]")).toHaveAttribute("aria-label", /الصفحة 6/)
   expect(await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null").completedPage)).toBe(4)
 
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   const savedOnDashboard = await page.evaluate(() => JSON.parse(window.localStorage.getItem("wird-khatma-plan-v1") ?? "null"))
   expect(savedOnDashboard.completedPage).toBe(6)
   expect(savedOnDashboard.startPage).toBe(5)
@@ -1110,7 +1152,7 @@ test("يعرض تأخر مسار الختمة بالعربية والإنجلي�
   })
 
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.getByRole("button", { name: /^الختمة/ }).first().click()
   const overdueStatus = page.locator('[data-khatma-overdue-days="4"]')
   await expect(overdueStatus).toHaveText("متأخر 4 أيام عن المقرر")
@@ -1156,7 +1198,7 @@ test("يعرض تأخر مسار الختمة بالعربية والإنجلي�
 
 test("يوضح أن تذكير الختمة يعمل داخل التطبيق", async ({ page }) => {
   await openMushaf(page)
-  await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
+  await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
   await page.locator("button").filter({ hasText: "إنشاء مسار ختمة" }).click()
   await expect(page.getByRole("heading", { name: "مسار الختمة" })).toBeVisible()
   await expect(page.getByText("تذكير يومي داخل التطبيق", { exact: true })).toBeVisible()
@@ -1291,8 +1333,12 @@ test("يوزع مشغل الهاتف ويغير موضع سهم الطي", async
 })
 
 test("يعتمد أيقونة وردي في الرأس والتثبيت والأقنعة", async ({ page, request }) => {
-  const manifestResponse = await request.get("/manifest.webmanifest")
+  const [manifestResponse, markResponse] = await Promise.all([
+    request.get("/manifest.webmanifest"),
+    request.get("/icons/wird-mark.png"),
+  ])
   expect(manifestResponse.ok()).toBeTruthy()
+  expect(markResponse.ok()).toBeTruthy()
   const manifest = await manifestResponse.json() as {
     icons: Array<{ src: string; sizes: string; purpose?: string }>
   }
@@ -1305,10 +1351,11 @@ test("يعتمد أيقونة وردي في الرأس والتثبيت والأ
   await openMushaf(page)
   const appIcon = page.locator("[data-app-icon]")
   await expect(appIcon).toBeVisible()
-  await expect.poll(() => appIcon.evaluate((image: HTMLImageElement) => ({
-    complete: image.complete,
-    square: image.naturalWidth > 0 && image.naturalWidth === image.naturalHeight,
-  }))).toEqual({ complete: true, square: true })
+  await expect.poll(() => appIcon.evaluate((mark) => ({
+    usesMark: getComputedStyle(mark).maskImage.includes("/icons/wird-mark.png"),
+    square: mark.getBoundingClientRect().width > 0
+      && mark.getBoundingClientRect().width === mark.getBoundingClientRect().height,
+  }))).toEqual({ usesMark: true, square: true })
 })
 
 test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ request }) => {
@@ -1320,7 +1367,8 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
-  expect(workerSource).toContain('VERSION = `wird-v49-')
+  expect(workerSource).toContain('VERSION = `wird-v50-')
+  expect(workerSource).toContain('"/icons/wird-mark.png"')
   expect(workerSource).toContain('QURAN_CACHE = "wird-quran-v1"')
   expect(workerSource).toContain("matchCachedStaticAsset")
   expect(workerSource).toContain("APP_CACHE_GENERATIONS = 3")
@@ -1504,10 +1552,10 @@ test("يبقي التمرير مفعّلًا دون اتصال ويستأنف ا
   await context.setOffline(true)
   try {
     await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
-    await expect(page.getByRole("heading", { name: "إعدادات وِرد" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "إعدادات وِردي" })).toBeVisible()
     await page.getByRole("button", { name: "إغلاق الإعدادات" }).click()
-    await page.getByRole("button", { name: "فتح لوحة وِرد" }).click()
-    await expect(page.getByRole("heading", { name: "لوحة وِرد" })).toBeAttached()
+    await page.getByRole("button", { name: "فتح لوحة وِردي" }).click()
+    await expect(page.getByRole("heading", { name: "لوحة وِردي" })).toBeAttached()
     await page.getByRole("button", { name: "العودة إلى المصحف" }).click()
 
     await page.getByRole("button", { name: "بدء التمرير التلقائي" }).click()

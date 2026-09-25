@@ -6348,7 +6348,7 @@ export function QuranPlayer() {
           ? `صفحة ${currentPage}`
           : currentVerse ? `الآية ${currentVerse.verseKey}` : `صفحة ${currentPage}`,
       artist: selectedReciter.name,
-      album: "وِرد · المصحف الشريف",
+      album: "وِردي · المصحف الشريف",
       artwork: [
         {
           src: `https://cdn.myquran.com/img/page/${currentPage}.png`,
@@ -8113,27 +8113,23 @@ export function QuranPlayer() {
               <button
                 type="button"
                 className="flex min-w-0 items-center gap-[6px] rounded-md text-right sm:gap-3"
-                aria-label={dashboardOpen ? "العودة إلى المصحف" : "فتح لوحة وِرد"}
+                aria-label={dashboardOpen ? "العودة إلى المصحف" : "فتح لوحة وِردي"}
                 onClick={() => {
                   if (dashboardOpen) setDashboardOpen(false)
                   else openDashboardView()
                 }}
               >
                 <span className={cn(
-                  "relative size-9 shrink-0 overflow-hidden rounded-md sm:size-10",
+                  "relative size-9 shrink-0 overflow-hidden rounded-md bg-[var(--app-logo-surface)] ring-1 ring-inset ring-border sm:size-10",
                   compactPlaybackChrome && "sm:size-8",
                 )}>
-                  <Image
-                    src="/icons/wird-192.png"
-                    alt=""
-                    fill
-                    sizes={compactPlaybackChrome ? "32px" : "40px"}
-                    className="object-cover"
+                  <span
+                    className="wird-app-mark absolute inset-[4px] bg-[var(--app-logo-mark)]"
                     data-app-icon
-                    priority
+                    aria-hidden="true"
                   />
                 </span>
-                {dashboardOpen && <span className="truncate text-xs font-semibold sm:text-sm">وِرد</span>}
+                {dashboardOpen && <span className="truncate text-xs font-semibold sm:text-sm">وِردي</span>}
               </button>
               {!dashboardOpen && landscapePageIdentity && (
                 <button

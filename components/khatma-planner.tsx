@@ -284,7 +284,7 @@ export function KhatmaPlanner({ open, onOpenChange, currentPage, onOpenRange }: 
         if (cancelled) return
         const title = "موعد وِرد الختمة"
         const body = isComplete
-          ? "أتممت الختمة. افتح وِرد لبدء مسار جديد."
+          ? "أتممت الختمة. افتح وِردي لبدء مسار جديد."
           : `مقرر اليوم من الصفحة ${todayStart} إلى الصفحة ${baseEnd}`
         try {
           if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {

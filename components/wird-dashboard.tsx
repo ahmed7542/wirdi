@@ -347,7 +347,7 @@ export function WirdDashboard({
   return (
     <>
     <main className="mx-auto min-h-[calc(100dvh-3rem)] w-full max-w-[1600px] px-0 py-0 text-right sm:px-6 sm:py-4 lg:px-10" dir="rtl">
-      <h1 className="sr-only">لوحة وِرد</h1>
+      <h1 className="sr-only">لوحة وِردي</h1>
       <section className="border-b sm:border-x">
         {navigationPanel}
       </section>

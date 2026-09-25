@@ -45,7 +45,7 @@ export function parseWirdBackup(value: string): WirdBackup {
   if (value.length > 10 * 1024 * 1024) throw new Error("حجم ملف النسخة الاحتياطية أكبر من المسموح")
   const parsed = JSON.parse(value) as Partial<WirdBackup>
   if (parsed.app !== "wird" || parsed.version !== WIRD_BACKUP_VERSION || !parsed.data || typeof parsed.data !== "object") {
-    throw new Error("هذا الملف ليس نسخة احتياطية صالحة من وِرد")
+    throw new Error("هذا الملف ليس نسخة احتياطية صالحة من وِردي")
   }
   const entries = Object.entries(parsed.data)
   if (entries.length > 500) throw new Error("تحتوي النسخة الاحتياطية على بيانات غير متوقعة")
