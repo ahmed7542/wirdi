@@ -899,6 +899,21 @@ test("يثبت قياسات تبويبات الإعدادات وينقل الل�
   await expect(page.locator('[data-settings-content="install"] [data-language-settings]')).toHaveCount(0)
 })
 
+test("يمرر قائمة قراء تنزيل التلاوات", async ({ page }) => {
+  await openMushaf(page)
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التنزيلات" }).click()
+  const reciterPicker = page.getByRole("combobox", { name: /اختيار قارئ التنزيل/ })
+  await reciterPicker.click()
+
+  const reciterList = page.locator("[data-download-reciter-list]")
+  await expect(reciterList).toBeVisible()
+  await expect.poll(() => reciterList.evaluate((list) => list.scrollHeight > list.clientHeight)).toBe(true)
+  await reciterList.hover()
+  await page.mouse.wheel(0, 500)
+  await expect.poll(() => reciterList.evaluate((list) => list.scrollTop)).toBeGreaterThan(0)
+})
+
 test("يوضح تبويبات الإعدادات ويحسن إدارة أقسام العلامات", async ({ page }) => {
   await openMushaf(page)
   await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
@@ -1659,6 +1674,95 @@ test("يعيد فتح رابط التطبيق المحفوظ دون شبكة", a
     await page.goto("/?khatma=1", { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
     await expect(page.getByText("لا يوجد اتصال بالإنترنت")).toHaveCount(0)
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
+test("يستكمل بيانات تشغيل التنزيلات القديمة تلقائيًا", async ({ page, request }) => {
+  const descriptorResponse = await request.get("/api/quran/chapter-audio", {
+    params: { chapter: "1", reciter: "6" },
+  })
+  expect(descriptorResponse.ok()).toBeTruthy()
+  const descriptor = await descriptorResponse.json() as { audioUrl: string; fileSize: number }
+  await page.addInitScript(({ audioUrl, fileSize }) => {
+    window.localStorage.setItem("wird-offline-surahs", JSON.stringify([{
+      key: "6-1",
+      chapterId: 1,
+      chapterName: "الفاتحة",
+      reciter: 6,
+      reciterName: "محمود خليل الحصري",
+      audioUrl,
+      size: fileSize,
+      qualityLabel: "الجودة الأصلية",
+    }]))
+  }, descriptor)
+
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    const url = "/api/quran?page=1&reciter=6"
+    for (const cacheName of await window.caches.keys()) {
+      await (await window.caches.open(cacheName)).delete(url)
+    }
+  })
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التنزيلات" }).click()
+  await expect.poll(() => page.evaluate(async () => Boolean(
+    await window.caches.match("/api/quran?page=1&reciter=6"),
+  ))).toBe(true)
+  await expect(page.getByText("تعذر استكمال بيانات بعض التلاوات المحفوظة")).toHaveCount(0)
+})
+
+test("يشغل السورة المنزلة بعد إعادة فتح التطبيق دون اتصال", async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?release=offline-downloaded-recitation-test", {
+      scope: "/",
+      updateViaCache: "none",
+    })
+    await navigator.serviceWorker.ready
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
+
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التنزيلات" }).click()
+  const downloads = page.locator('[data-settings-content="downloads"]')
+  await expect(downloads).toBeVisible()
+  await downloads.getByRole("checkbox").first().click()
+  await downloads.getByRole("button", { name: "تنزيل 1 سورة" }).click()
+  await expect(page.getByText(/تم تنزيل 1 سورة بصوت/)).toBeVisible({ timeout: 60_000 })
+
+  const cachedDownload = await page.evaluate(async () => {
+    const entries = JSON.parse(window.localStorage.getItem("wird-offline-surahs") ?? "[]") as Array<{
+      audioUrl: string
+      chapterId: number
+      reciter: number
+    }>
+    const entry = entries.find((item) => item.chapterId === 1 && item.reciter === 6)
+    if (!entry) return { entry: false, audio: false, metadata: false }
+    return {
+      entry: true,
+      audio: Boolean(await window.caches.match(entry.audioUrl)),
+      metadata: Boolean(await window.caches.match("/api/quran?page=1&reciter=6")),
+    }
+  })
+  expect(cachedDownload).toEqual({ entry: true, audio: true, metadata: true })
+
+  await context.setOffline(true)
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
+    const playButton = page.getByRole("button", { name: "تشغيل", exact: true })
+    await playButton.click()
+    await expect(page.getByText(/غير متصل بالإنترنت، وتلاوة القارئ .* غير محمّلة/)).toHaveCount(0)
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => ({
+      paused: audio.paused,
+      currentTime: audio.currentTime,
+    }))).toMatchObject({ paused: false })
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0)
   } finally {
     await context.setOffline(false)
   }

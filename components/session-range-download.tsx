@@ -21,11 +21,11 @@ import {
   OFFLINE_AUDIO_CACHE,
   OFFLINE_PAGE_CACHE,
   formatOfflineBytes,
+  getOfflineRecitationPageUrl,
   loadOfflineRangePackages,
   saveOfflineRangePackages,
   type OfflineRangePackage,
 } from "@/lib/offline-audio"
-import { getOfflineQuranPageUrl } from "@/lib/offline-quran"
 
 type RangeDescriptor = Omit<OfflineRangePackage, "key" | "reciterName">
 type RangeReadiness = {
@@ -91,7 +91,9 @@ export function SessionRangeDownload({ range, reciter, reciterName, compact = fa
         ])
         const audioMatches = await Promise.all(data.files.map((file) => audioCache.match(file.audioUrl).catch(() => undefined)))
         const pages = Array.from({ length: checkedRange.endPage - checkedRange.startPage + 1 }, (_, index) => checkedRange.startPage + index)
-        const pageMatches = await Promise.all(pages.map((page) => pageCache.match(getOfflineQuranPageUrl(page)).catch(() => undefined)))
+        const pageMatches = await Promise.all(pages.map((page) => pageCache.match(
+          getOfflineRecitationPageUrl(page, reciter),
+        ).catch(() => undefined)))
         setPreparedDescriptor(data)
         setReadiness({
           textReady: pageMatches.filter(Boolean).length,
@@ -168,7 +170,9 @@ export function SessionRangeDownload({ range, reciter, reciterName, compact = fa
       )
       const [audioMatches, pageMatches] = await Promise.all([
         Promise.all(currentDescriptor.files.map((file) => audioCache.match(file.audioUrl).catch(() => undefined))),
-        Promise.all(pages.map((page) => pageCache.match(getOfflineQuranPageUrl(page)).catch(() => undefined))),
+        Promise.all(pages.map((page) => pageCache.match(
+          getOfflineRecitationPageUrl(page, reciter),
+        ).catch(() => undefined))),
       ])
       const remainingSize = currentDescriptor.files.reduce(
         (total, file, index) => total + (audioMatches[index] ? 0 : file.fileSize),
@@ -186,9 +190,9 @@ export function SessionRangeDownload({ range, reciter, reciterName, compact = fa
 
       for (let index = 0; index < pages.length; index += 1) {
         if (pageMatches[index]) continue
-        const url = getOfflineQuranPageUrl(pages[index])
+        const url = getOfflineRecitationPageUrl(pages[index], reciter)
         const response = await fetch(url, { signal: controller.signal })
-        if (!response.ok) throw new Error(`تعذر تنزيل نص الصفحة ${pages[index]}`)
+        if (!response.ok) throw new Error(`تعذر تنزيل بيانات الصفحة ${pages[index]}`)
         await pageCache.put(url, response)
         completedItems += 1
         updateProgress()

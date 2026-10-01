@@ -83,6 +83,8 @@ import {
 import {
   OFFLINE_AUDIO_CACHE,
   OFFLINE_PAGE_CACHE,
+  cacheOfflineRecitationMetadata,
+  hasOfflineRecitationMetadata,
   loadOfflineRangePackages,
   saveOfflineRangePackages,
   type OfflineRangePackage,
@@ -332,6 +334,7 @@ export function AppSettings({
   const [bulkDownloadProgress, setBulkDownloadProgress] = useState(0)
   const [bulkDownloadLabel, setBulkDownloadLabel] = useState("")
   const [repairingOffline, setRepairingOffline] = useState(false)
+  const [repairingRecitationMetadata, setRepairingRecitationMetadata] = useState(false)
   const [repairProgress, setRepairProgress] = useState(0)
   const [offlinePageCount, setOfflinePageCount] = useState(0)
   const [offlineQuranStatus, setOfflineQuranStatus] = useState<OfflineQuranStatus>({
@@ -428,6 +431,43 @@ export function AppSettings({
     window.addEventListener("wird-offline-ranges-changed", refreshRanges)
     return () => window.removeEventListener("wird-offline-ranges-changed", refreshRanges)
   }, [])
+
+  useEffect(() => {
+    if (!open || navigator.onLine === false || entries.length === 0) return
+    const controller = new AbortController()
+    let cancelled = false
+
+    void (async () => {
+      const missingEntries: OfflineSurah[] = []
+      for (const entry of entries) {
+        if (!await hasOfflineRecitationMetadata(entry.chapterId, entry.reciter, entry.audioUrl)) {
+          missingEntries.push(entry)
+        }
+      }
+      if (cancelled || missingEntries.length === 0) return
+      setRepairingRecitationMetadata(true)
+      for (const entry of missingEntries) {
+        await cacheOfflineRecitationMetadata({
+          chapterId: entry.chapterId,
+          reciter: entry.reciter,
+          audioUrl: entry.audioUrl,
+          signal: controller.signal,
+        })
+      }
+      if (!cancelled) toast.success("اكتملت بيانات تشغيل التلاوات المحفوظة دون إنترنت")
+    })().catch((error: Error) => {
+      if (!cancelled && error.name !== "AbortError") {
+        toast.error("تعذر استكمال بيانات بعض التلاوات المحفوظة")
+      }
+    }).finally(() => {
+      if (!cancelled) setRepairingRecitationMetadata(false)
+    })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [entries, open])
 
   useEffect(() => {
     if (!open || !("caches" in window)) return
@@ -624,17 +664,6 @@ export function AppSettings({
     setPendingDownload(null)
     setDownloadingChapter(chapter.id)
     setDownloadProgress(0)
-    const pendingEntry: OfflineSurah = {
-      key: `${targetReciter}-${chapter.id}`,
-      chapterId: chapter.id,
-      chapterName,
-      reciter: targetReciter,
-      reciterName: targetReciterName,
-      audioUrl: variant.audioUrl,
-      size: variant.fileSize,
-      qualityLabel: variant.label,
-    }
-    persistEntries([pendingEntry, ...entries.filter((item) => item.key !== pendingEntry.key)])
 
     try {
       await navigator.storage?.persist?.()
@@ -664,12 +693,12 @@ export function AppSettings({
           async pull(streamController) {
             const result = await reader.read()
             if (result.done) {
-              setDownloadProgress(100)
+              setDownloadProgress(90)
               streamController.close()
               return
             }
             received += result.value.byteLength
-            const progress = size > 0 ? Math.min(99, Math.round((received / size) * 100)) : 0
+            const progress = size > 0 ? Math.min(89, Math.round((received / size) * 90)) : 0
             if (progress !== lastProgress) {
               lastProgress = progress
               setDownloadProgress(progress)
@@ -690,7 +719,18 @@ export function AppSettings({
         )
       } else {
         await cache.put(variant.audioUrl, audioResponse)
+        setDownloadProgress(90)
       }
+
+      await cacheOfflineRecitationMetadata({
+        chapterId: chapter.id,
+        reciter: targetReciter,
+        audioUrl: variant.audioUrl,
+        signal: controller.signal,
+        onProgress: (completed, total) => {
+          setDownloadProgress(90 + Math.round((completed / total) * 10))
+        },
+      })
 
       const entry: OfflineSurah = {
         key: `${targetReciter}-${chapter.id}`,
@@ -813,6 +853,13 @@ export function AppSettings({
               await cache.put(variant.audioUrl, audioResponse)
             }
           }
+
+          await cacheOfflineRecitationMetadata({
+            chapterId: chapter.id,
+            reciter: targetReciter.id,
+            audioUrl: variant.audioUrl,
+            signal: controller.signal,
+          })
 
           const entry: OfflineSurah = {
             key: `${targetReciter.id}-${chapter.id}`,
@@ -1622,7 +1669,7 @@ export function AppSettings({
             </div>
           </TabsContent>
 
-          <TabsContent value="downloads" className="min-h-0 overflow-y-auto px-5 py-4">
+          <TabsContent value="downloads" className="min-h-0 overflow-y-auto px-5 py-4" data-settings-content="downloads">
             <div className="mb-5 space-y-4 border-b pb-5">
               <div>
                 <h3 className="flex items-center gap-2 text-sm font-semibold"><BookOpen className="size-4" />المحتوى دون اتصال</h3>
@@ -1714,6 +1761,12 @@ export function AppSettings({
                 <div><span className="block text-muted-foreground">صفحات النص</span><strong className="tabular-nums">{offlinePageCount}/604</strong></div>
                 <div><span className="block text-muted-foreground">ملفات التلاوة</span><strong className="tabular-nums">{offlineFileCount.cached}/{offlineFileCount.total}</strong></div>
               </div>
+              {repairingRecitationMetadata && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                  جاري استكمال بيانات تشغيل التلاوات المحفوظة دون إنترنت
+                </div>
+              )}
               {offlineMissingFiles.length > 0 && (
                 <div className="space-y-2">
                   {repairingOffline && <Progress value={repairProgress} className="h-1.5" />}
@@ -1759,16 +1812,21 @@ export function AppSettings({
                   </PopoverTrigger>
                   <PopoverContent
                     align="start"
-                    className="w-[var(--radix-popover-trigger-width)] p-0"
+                    className="max-h-[min(70dvh,24rem)] w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
                     dir="rtl"
                   >
-                    <Command shouldFilter={false}>
+                    <Command className="max-h-[min(70dvh,24rem)]" shouldFilter={false}>
                       <CommandInput
                         value={downloadReciterQuery}
                         onValueChange={setDownloadReciterQuery}
                         placeholder="ابحث باسم القارئ..."
                       />
-                      <CommandList className="max-h-72">
+                      <CommandList
+                        className="h-72 max-h-[min(60dvh,18rem)] touch-pan-y overscroll-contain overflow-y-auto [scrollbar-gutter:stable]"
+                        data-download-reciter-list
+                        onWheelCapture={(event) => event.stopPropagation()}
+                        onTouchMoveCapture={(event) => event.stopPropagation()}
+                      >
                         <CommandEmpty>لا يوجد قارئ بهذا الاسم</CommandEmpty>
                         {filteredDownloadReciters.map((item) => (
                           <CommandItem
