@@ -6,12 +6,14 @@ const QUL_AUDIO_API = "https://qul.tarteel.ai/api/v1/audio/surah_segments"
 
 export const AL_BANNA_RECITER_ID = 1001
 export const AL_HUDHAIFY_RECITER_ID = 1002
+export const AL_BANNA_MUJAWWAD_RECITER_ID = 1003
 export const AL_MINSHAWI_MUJAWWAD_RECITER_ID = 8
 
 export const CONTINUOUS_CHAPTER_RECITER_IDS = new Set([
   AL_MINSHAWI_MUJAWWAD_RECITER_ID,
   AL_BANNA_RECITER_ID,
   AL_HUDHAIFY_RECITER_ID,
+  AL_BANNA_MUJAWWAD_RECITER_ID,
 ])
 
 type ChapterTimestamp = {
@@ -58,8 +60,22 @@ const RECITER_CONFIG = {
   [AL_HUDHAIFY_RECITER_ID]: {
     catalogReciterId: 74,
     moshafId: 74,
+    rewayaId: 1,
     fallbackServer: "https://server9.mp3quran.net/hthfi/",
-    qulRecitationId: 167,
+    timingReadId: 74,
+    timingAyahOffset: 1,
+    bitrate: 64_000,
+    durationRecitationId: 167,
+  },
+  [AL_BANNA_MUJAWWAD_RECITER_ID]: {
+    catalogReciterId: 121,
+    moshafId: 122,
+    rewayaId: 22,
+    fallbackServer: "https://server8.mp3quran.net/bna/Almusshaf-Al-Mojawwad/",
+    timingReadId: 122,
+    timingAyahOffset: 0,
+    bitrate: 96_000,
+    durationRecitationId: null,
   },
 } as const
 
@@ -77,7 +93,7 @@ async function getMp3QuranServer(reciter: number, chapter: number) {
       const reciterEntry = catalog.reciters.find((item) => item.id === config.catalogReciterId)
       const moshaf = reciterEntry?.moshaf.find((item) => (
         item.id === config.moshafId &&
-        item.rewaya_id === 1 &&
+        item.rewaya_id === config.rewayaId &&
         item.surah_list.split(",").map(Number).includes(chapter)
       ))
       if (moshaf?.server) server = moshaf.server
@@ -118,15 +134,20 @@ function getQulTimestamps(chapter: number, ayahCount: number, data: QulAudioResp
   return timestamps
 }
 
-async function getHudhaifyTimestamps(chapter: number, ayahCount: number, durationMs: number) {
+async function getMp3QuranTimestamps(
+  config: (typeof RECITER_CONFIG)[keyof typeof RECITER_CONFIG],
+  chapter: number,
+  ayahCount: number,
+  durationMs: number,
+) {
   const url = new URL(MP3QURAN_TIMING_API)
-  url.searchParams.set("read", "74")
+  url.searchParams.set("read", String(config.timingReadId))
   url.searchParams.set("surah", String(chapter))
   const response = await fetch(url, { next: MONTHLY_CACHE })
   if (!response.ok) throw new Error(`MP3Quran timing API returned ${response.status}`)
   const rows = (await response.json()) as Mp3QuranTiming[]
   const timestamps = rows.flatMap((row) => {
-    const ayah = row.ayah + 1
+    const ayah = row.ayah + config.timingAyahOffset
     if (
       ayah < 1 ||
       ayah > ayahCount ||
@@ -219,16 +240,18 @@ export async function getContinuousChapterAudio(reciter: number, chapter: number
   const config = RECITER_CONFIG[reciter as keyof typeof RECITER_CONFIG]
   if (!config) throw new Error("Continuous chapter reciter is not supported")
   const ayahCount = getSurahMeta(chapter as Surah).ayahCount
-  const qulAudio = await getQulAudio(config.qulRecitationId, chapter, ayahCount)
+  const durationData = config.durationRecitationId
+    ? await getQulAudio(config.durationRecitationId, chapter, ayahCount)
+    : null
   const server = await getMp3QuranServer(reciter, chapter)
   const audioUrl = `${server}${String(chapter).padStart(3, "0")}.mp3`
   const fileSize = await getRemoteFileSize(audioUrl)
   const durationMs = Math.max(
-    Math.round((qulAudio.audio?.duration ?? 0) * 1000),
-    Math.round((fileSize * 8 * 1000) / 64_000),
+    Math.round((durationData?.audio?.duration ?? 0) * 1000),
+    Math.round((fileSize * 8 * 1000) / config.bitrate),
     1_000,
   )
-  const timing = await getHudhaifyTimestamps(chapter, ayahCount, durationMs)
+  const timing = await getMp3QuranTimestamps(config, chapter, ayahCount, durationMs)
 
   return {
     audioUrl,

@@ -908,7 +908,8 @@ test("يمرر قائمة قراء تنزيل التلاوات", async ({ page }
 
   const reciterList = page.locator("[data-download-reciter-list]")
   await expect(reciterList).toBeVisible()
-  await expect(reciterList.getByRole("option", { name: "محمود علي البنا" })).toBeAttached()
+  await expect(reciterList.getByRole("option", { name: /محمود علي البنا مرتل/ })).toBeAttached()
+  await expect(reciterList.getByRole("option", { name: /محمود علي البنا مجود/ })).toBeAttached()
   await expect(reciterList.getByRole("option", { name: "علي بن عبدالرحمن الحذيفي" })).toBeAttached()
   await expect.poll(() => reciterList.evaluate((list) => list.scrollHeight > list.clientHeight)).toBe(true)
   await reciterList.hover()
@@ -921,6 +922,7 @@ test("يجهز ملفات سور كاملة للمنشاوي والبنا وال
     [8, "/quran/surah/minshawy/mujawwad/mp3/001.mp3"],
     [1001, "/quran/mahmood_ali_albana/001.mp3"],
     [1002, "/hthfi/001.mp3"],
+    [1003, "/bna/Almusshaf-Al-Mojawwad/001.mp3"],
   ] as const) {
     const response = await request.get("/api/quran/offline-range", {
       params: {
@@ -946,7 +948,7 @@ test("يجهز ملفات سور كاملة للمنشاوي والبنا وال
 })
 
 test("يستخدم ملف سورة متصلًا للقراء الذين كانوا يتوقفون بين الآيات", async ({ request }) => {
-  for (const reciter of [8, 1001, 1002]) {
+  for (const reciter of [8, 1001, 1002, 1003]) {
     const response = await request.get("/api/quran", {
       params: { page: "2", reciter: String(reciter) },
     })
@@ -978,6 +980,16 @@ test("يستخدم ملف سورة متصلًا للقراء الذين كانو
       )
     }
   }
+
+  const durationResponse = await request.get("/api/quran/session-duration", {
+    params: { reciter: "1003", startPage: "1", endPage: "1" },
+  })
+  expect(durationResponse.ok()).toBeTruthy()
+  expect(await durationResponse.json()).toMatchObject({
+    approximate: false,
+    startVerseKey: "1:1",
+    endVerseKey: "1:7",
+  })
 })
 
 test("يوضح تبويبات الإعدادات ويحسن إدارة أقسام العلامات", async ({ page }) => {

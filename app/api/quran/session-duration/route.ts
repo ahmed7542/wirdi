@@ -14,6 +14,13 @@ import {
   HADR_RECITER_IDS,
   YASSER_SALAMA_RECITER_ID,
 } from "@/lib/hadr-recitations"
+import {
+  AL_BANNA_MUJAWWAD_RECITER_ID,
+  AL_BANNA_RECITER_ID,
+  AL_HUDHAIFY_RECITER_ID,
+  CONTINUOUS_CHAPTER_RECITER_IDS,
+  getContinuousChapterAudio,
+} from "@/lib/mp3quran-recitations"
 import { ALIGNED_RECITER_IDS, getAlignedChapterAudio } from "@/lib/quran-recitation-data"
 
 type ChapterTimestamp = {
@@ -30,12 +37,10 @@ type ChapterAudioResponse = {
 }
 
 const QURAN_API_URL = "https://api.quran.com/api/v4"
-const AL_BANNA_RECITER_ID = 1001
-const AL_HUDHAIFY_RECITER_ID = 1002
 const VALID_RECITERS = new Set([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19,
   22, 43, 88, 91, 97, 104, 109, AL_BANNA_RECITER_ID, AL_HUDHAIFY_RECITER_ID,
-  AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
+  AL_BANNA_MUJAWWAD_RECITER_ID, AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
 ])
 
 function parseVerseKey(value: string | null) {
@@ -75,6 +80,15 @@ async function mapWithConcurrency<T, R>(
 }
 
 async function getChapterTiming(reciter: number, chapter: number) {
+  if (CONTINUOUS_CHAPTER_RECITER_IDS.has(reciter)) {
+    const continuous = await getContinuousChapterAudio(reciter, chapter)
+    return {
+      timestamps: continuous.timestamps,
+      openingStartMs: continuous.openingStartMs,
+      scale: 1,
+      approximate: continuous.timingMode === "approximate",
+    }
+  }
   if (ALIGNED_RECITER_IDS.has(reciter)) {
     const aligned = await getAlignedChapterAudio(reciter, chapter)
     return {
@@ -84,8 +98,7 @@ async function getChapterTiming(reciter: number, chapter: number) {
       approximate: aligned.timingMode === "approximate",
     }
   }
-  const referenceReciter = reciter === AL_BANNA_RECITER_ID || reciter === AL_HUDHAIFY_RECITER_ID ? 6 : reciter
-  const referenceData = await fetchChapterAudio(referenceReciter, chapter, true)
+  const referenceData = await fetchChapterAudio(reciter, chapter, true)
   const timestamps = referenceData.audio_file?.timestamps ?? []
   const referenceDuration = timestamps.at(-1)?.timestamp_to ?? 0
   if (!timestamps.length || referenceDuration <= 0) {
@@ -95,7 +108,7 @@ async function getChapterTiming(reciter: number, chapter: number) {
     timestamps,
     openingStartMs: 0,
     scale: 1,
-    approximate: reciter === AL_BANNA_RECITER_ID || reciter === AL_HUDHAIFY_RECITER_ID,
+    approximate: false,
   }
 }
 

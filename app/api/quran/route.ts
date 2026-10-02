@@ -7,6 +7,7 @@ import {
   YASSER_SALAMA_RECITER_ID,
 } from "@/lib/hadr-recitations"
 import {
+  AL_BANNA_MUJAWWAD_RECITER_ID,
   AL_BANNA_RECITER_ID,
   AL_HUDHAIFY_RECITER_ID,
   CONTINUOUS_CHAPTER_RECITER_IDS,
@@ -81,7 +82,7 @@ const QCF4_CDN_URL = "https://cdn.jsdelivr.net/npm/quran-qcf4@1.0.3"
 const VALID_RECITERS = new Set([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19,
   22, 43, 88, 91, 97, 104, 109, AL_BANNA_RECITER_ID, AL_HUDHAIFY_RECITER_ID,
-  AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
+  AL_BANNA_MUJAWWAD_RECITER_ID, AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
 ])
 
 export async function GET(request: Request) {

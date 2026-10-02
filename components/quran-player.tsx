@@ -518,6 +518,7 @@ const RECITERS = [
   { id: 22, name: "محمد أيوب", detail: "مرتل" },
   { id: 109, name: "عبدالرشيد صوفي", detail: "حفص" },
   { id: 1001, name: "محمود علي البنا", detail: "مرتل" },
+  { id: 1003, name: "محمود علي البنا", detail: "مجود" },
   { id: 1002, name: "علي بن عبدالرحمن الحذيفي", detail: "مرتل" },
   { id: 2001, name: "أحمد ديبان", detail: "مصحف الحدر · مزامنة بالسورة", syncScope: "chapter" },
   { id: 2002, name: "ياسر سلامة", detail: "مصحف الحدر · مزامنة بالصفحة", syncScope: "page" },
