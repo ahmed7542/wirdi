@@ -1,5 +1,5 @@
 const RELEASE = new URL(self.location.href).searchParams.get("release") || "base"
-const VERSION = `wird-v51-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
+const VERSION = `wird-v52-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
 const STATIC_CACHE = `${VERSION}-static`
 const PAGE_CACHE = `${VERSION}-pages`
 const QURAN_CACHE = "wird-quran-v1"
@@ -50,6 +50,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url)
   const isQuranAudio = [
     "download.quranicaudio.com",
+    "audio-cdn.tarteel.ai",
     "audio.qurancdn.com",
     "verses.quran.com",
     "everyayah.com",

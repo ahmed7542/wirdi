@@ -6,6 +6,12 @@ import {
   HADR_RECITER_IDS,
   YASSER_SALAMA_RECITER_ID,
 } from "@/lib/hadr-recitations"
+import {
+  AL_BANNA_RECITER_ID,
+  AL_HUDHAIFY_RECITER_ID,
+  CONTINUOUS_CHAPTER_RECITER_IDS,
+  getContinuousChapterAudio,
+} from "@/lib/mp3quran-recitations"
 import { ALIGNED_RECITER_IDS, getAlignedChapterAudio } from "@/lib/quran-recitation-data"
 
 type QuranWord = {
@@ -70,47 +76,13 @@ type ChapterAudioResponse = {
   }
 }
 
-type AyahAudioFile = {
-  verse_key: string
-  url: string
-  duration?: number
-  segments?: number[][]
-}
-
-type AyahAudioResponse = {
-  audio_files?: AyahAudioFile[]
-}
-
 const QURAN_API_URL = "https://api.quran.com/api/v4"
 const QCF4_CDN_URL = "https://cdn.jsdelivr.net/npm/quran-qcf4@1.0.3"
-const AL_BANNA_RECITER_ID = 1001
-const AL_HUDHAIFY_RECITER_ID = 1002
-const AL_MINSHAWI_MUJAWWAD_RECITER_ID = 8
-const AL_BANNA_AUDIO_BASE = "https://everyayah.com/data/mahmoud_ali_al_banna_32kbps"
-const AL_HUDHAIFY_AUDIO_BASE = "https://everyayah.com/data/Hudhaify_128kbps"
-const VERSE_AUDIO_BASE = "https://verses.quran.com"
 const VALID_RECITERS = new Set([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19,
   22, 43, 88, 91, 97, 104, 109, AL_BANNA_RECITER_ID, AL_HUDHAIFY_RECITER_ID,
   AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
 ])
-
-function getEveryAyahVerseUrl(baseUrl: string, verseKey: string) {
-  const [chapter, verse] = verseKey.split(":").map(Number)
-  return `${baseUrl}/${String(chapter).padStart(3, "0")}${String(verse).padStart(3, "0")}.mp3`
-}
-
-async function getRemoteFileSize(url: string) {
-  try {
-    const response = await fetch(url, {
-      method: "HEAD",
-      next: { revalidate: 60 * 60 * 24 * 30 },
-    })
-    return Number(response.headers.get("content-length")) || 0
-  } catch {
-    return 0
-  }
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -243,13 +215,23 @@ export async function GET(request: Request) {
       )
     }
 
-    const chapterAudio = reciter === AL_BANNA_RECITER_ID ||
-      reciter === AL_HUDHAIFY_RECITER_ID ||
-      reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID ||
-      HADR_RECITER_IDS.has(reciter)
+    const chapterAudio = HADR_RECITER_IDS.has(reciter)
       ? []
       : await Promise.all(
           chapterIds.map(async (chapterId) => {
+            if (CONTINUOUS_CHAPTER_RECITER_IDS.has(reciter)) {
+              const continuous = await getContinuousChapterAudio(reciter, chapterId)
+              return {
+                chapterId,
+                audioUrl: continuous.audioUrl,
+                openingStartMs: continuous.openingStartMs,
+                timingMode: continuous.timingMode,
+                timestamps: new Map(
+                  continuous.timestamps.map((timestamp) => [timestamp.verse_key, timestamp]),
+                ),
+              }
+            }
+
             if (ALIGNED_RECITER_IDS.has(reciter)) {
               const aligned = await getAlignedChapterAudio(reciter, chapterId)
               return {
@@ -287,69 +269,6 @@ export async function GET(request: Request) {
           }),
         )
 
-    const needsMinshawiBismillah = reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID && pageVerses.some((verse) => {
-      const chapterId = Number(verse.verse_key.split(":")[0])
-      return verse.verse_number === 1 && chapterId !== 1 && chapterId !== 9
-    })
-    const minshawiChapterIds = needsMinshawiBismillah
-      ? [...new Set([...chapterIds, 1])]
-      : chapterIds
-    const minshawiAudio = reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID
-      ? (await Promise.all(minshawiChapterIds.map(async (chapterId) => {
-          const audioUrl = new URL(`${QURAN_API_URL}/recitations/${reciter}/by_chapter/${chapterId}`)
-          audioUrl.searchParams.set("per_page", "300")
-          audioUrl.searchParams.set("fields", "verse_key,url,duration,segments")
-          const response = await fetch(audioUrl, { next: { revalidate: 60 * 60 * 24 * 30 } })
-          if (!response.ok) throw new Error(`Ayah audio API returned ${response.status}`)
-          return ((await response.json()) as AyahAudioResponse).audio_files ?? []
-        }))).flat().map((audio) => ({
-          verseKey: audio.verse_key,
-          audioUrl: audio.url.startsWith("http")
-            ? audio.url
-            : audio.url.startsWith("//")
-              ? `https:${audio.url}`
-              : `${VERSE_AUDIO_BASE}/${audio.url.replace(/^\//, "")}`,
-          duration: Math.max(
-            Math.round((audio.duration ?? 0) * 1000),
-            audio.segments?.at(-1)?.at(-1) ?? 0,
-            1_000,
-          ),
-          segments: audio.segments,
-        }))
-      : []
-
-    const everyAyahSource = reciter === AL_BANNA_RECITER_ID
-      ? { baseUrl: AL_BANNA_AUDIO_BASE, bitrate: 32_000 }
-      : reciter === AL_HUDHAIFY_RECITER_ID
-        ? { baseUrl: AL_HUDHAIFY_AUDIO_BASE, bitrate: 128_000 }
-        : null
-    const needsEveryAyahBismillah = Boolean(everyAyahSource) && pageVerses.some((verse) => {
-      const chapterId = Number(verse.verse_key.split(":")[0])
-      return verse.verse_number === 1 && chapterId !== 1 && chapterId !== 9
-    })
-    const everyAyahAudio = everyAyahSource
-      ? await Promise.all(pageVerses.map(async (verse) => {
-          const audioUrl = getEveryAyahVerseUrl(everyAyahSource.baseUrl, verse.verse_key)
-          const fileSize = await getRemoteFileSize(audioUrl)
-          const fallbackDuration = Math.max((verse.words?.length ?? 6) * 900, 4_000)
-          const estimatedDuration = fileSize > 0
-            ? Math.ceil((fileSize * 8 * 1000) / everyAyahSource.bitrate) + 750
-            : fallbackDuration
-          return { verseKey: verse.verse_key, audioUrl, estimatedDuration }
-        }))
-      : []
-    const everyAyahBismillah = needsEveryAyahBismillah && everyAyahSource
-      ? await (async () => {
-          const audioUrl = getEveryAyahVerseUrl(everyAyahSource.baseUrl, "1:1")
-          const fileSize = await getRemoteFileSize(audioUrl)
-          return {
-            audioUrl,
-            estimatedDuration: fileSize > 0
-              ? Math.ceil((fileSize * 8 * 1000) / everyAyahSource.bitrate) + 500
-              : 8_000,
-          }
-        })()
-      : null
     const hadrAudio = reciter === AHMED_DEBAN_RECITER_ID
       ? await Promise.all(chapterIds.map(async (chapterId) => ({
           chapterId,
@@ -364,36 +283,20 @@ export async function GET(request: Request) {
         : hadrAudio.map((audio) => [audio.chapterId, audio] as const),
     )
     const chapterAudioById = new Map(chapterAudio.map((chapter) => [chapter.chapterId, chapter]))
-    const everyAyahAudioByVerse = new Map(everyAyahAudio.map((audio) => [audio.verseKey, audio]))
-    const minshawiAudioByVerse = new Map(minshawiAudio.map((audio) => [audio.verseKey, audio]))
     const verses = pageVerses.map((verse) => {
       const chapterId = Number(verse.verse_key.split(":")[0])
-      const everyAyahVerseAudio = everyAyahAudioByVerse.get(verse.verse_key)
-      const minshawiVerseAudio = minshawiAudioByVerse.get(verse.verse_key)
-      const verseFileAudio = everyAyahVerseAudio
-        ? { duration: everyAyahVerseAudio.estimatedDuration }
-        : minshawiVerseAudio
       const hadrFile = hadrAudioByChapter.get(chapterId)
-      const timestamp = verseFileAudio
+      const timestamp = hadrFile
         ? {
             verse_key: verse.verse_key,
             timestamp_from: 0,
-            timestamp_to: verseFileAudio.duration,
-            segments: minshawiVerseAudio?.segments,
+            timestamp_to: hadrFile.durationMs,
+            segments: undefined,
           }
-        : hadrFile
-          ? {
-              verse_key: verse.verse_key,
-              timestamp_from: 0,
-              timestamp_to: hadrFile.durationMs,
-              segments: undefined,
-            }
-          : chapterAudioById.get(chapterId)?.timestamps.get(verse.verse_key)
+        : chapterAudioById.get(chapterId)?.timestamps.get(verse.verse_key)
       if (!timestamp) throw new Error(`Missing timestamp for ${verse.verse_key}`)
 
-      const timingSegments = minshawiVerseAudio?.segments ?? (
-        "segments" in timestamp ? timestamp.segments : undefined
-      ) ?? []
+      const timingSegments = ("segments" in timestamp ? timestamp.segments : undefined) ?? []
       const wordTimings = timingSegments.flatMap((segment) => {
         const hasSegmentIndex = segment.length >= 4
         const position = Number(segment[hasSegmentIndex ? 1 : 0])
@@ -473,67 +376,6 @@ export async function GET(request: Request) {
                 : 605,
             }
           })
-      : reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID
-      ? verses.flatMap((verse, index) => {
-          const audio = minshawiAudioByVerse.get(verse.verseKey)
-          if (!audio) throw new Error(`Missing Al-Minshawi audio for ${verse.verseKey}`)
-          const verseTrack = {
-            chapterId: verse.chapterId,
-            audioUrl: audio.audioUrl,
-            startMs: 0,
-            endMs: audio.duration,
-            firstVerseIndex: index,
-            lastVerseIndex: index,
-            timingMode: "verse" as const,
-          }
-          if (verse.verseNumber !== 1 || verse.chapterId === 1 || verse.chapterId === 9) {
-            return [verseTrack]
-          }
-          const bismillah = minshawiAudioByVerse.get("1:1")
-          if (!bismillah) throw new Error(`Missing Al-Minshawi Bismillah for ${verse.verseKey}`)
-          return [
-            {
-              chapterId: verse.chapterId,
-              audioUrl: bismillah.audioUrl,
-              startMs: 0,
-              endMs: bismillah.duration,
-              firstVerseIndex: index,
-              lastVerseIndex: index,
-              timingMode: "bismillah" as const,
-            },
-            verseTrack,
-          ]
-        })
-      : reciter === AL_BANNA_RECITER_ID || reciter === AL_HUDHAIFY_RECITER_ID
-      ? verses.flatMap((verse, index) => {
-          const audio = everyAyahAudioByVerse.get(verse.verseKey)
-          if (!audio) throw new Error(`Missing EveryAyah audio for ${verse.verseKey}`)
-          const verseTrack = {
-            chapterId: verse.chapterId,
-            audioUrl: audio.audioUrl,
-            startMs: 0,
-            endMs: verse.timestampTo,
-            firstVerseIndex: index,
-            lastVerseIndex: index,
-            timingMode: "verse" as const,
-          }
-          if (verse.verseNumber !== 1 || verse.chapterId === 1 || verse.chapterId === 9) {
-            return [verseTrack]
-          }
-          if (!everyAyahBismillah) throw new Error(`Missing EveryAyah Bismillah for ${verse.verseKey}`)
-          return [
-            {
-              chapterId: verse.chapterId,
-              audioUrl: everyAyahBismillah.audioUrl,
-              startMs: 0,
-              endMs: everyAyahBismillah.estimatedDuration,
-              firstVerseIndex: index,
-              lastVerseIndex: index,
-              timingMode: "bismillah" as const,
-            },
-            verseTrack,
-          ]
-        })
       : chapterIds.map((chapterId) => {
           const firstVerseIndex = verses.findIndex((verse) => verse.chapterId === chapterId)
           const lastVerseIndex = verses.findLastIndex((verse) => verse.chapterId === chapterId)

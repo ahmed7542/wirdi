@@ -916,8 +916,12 @@ test("يمرر قائمة قراء تنزيل التلاوات", async ({ page }
   await expect.poll(() => reciterList.evaluate((list) => list.scrollTop)).toBeGreaterThan(0)
 })
 
-test("يجهز ملفات سور كاملة للبنا والحذيفي من المصدر الموثوق", async ({ request }) => {
-  for (const [reciter, expectedPath] of [[1001, "/bna/001.mp3"], [1002, "/hthfi/001.mp3"]] as const) {
+test("يجهز ملفات سور كاملة للمنشاوي والبنا والحذيفي من المصدر الموثوق", async ({ request }) => {
+  for (const [reciter, expectedPath] of [
+    [8, "/quran/surah/minshawy/mujawwad/mp3/001.mp3"],
+    [1001, "/quran/mahmood_ali_albana/001.mp3"],
+    [1002, "/hthfi/001.mp3"],
+  ] as const) {
     const response = await request.get("/api/quran/offline-range", {
       params: {
         reciter: String(reciter),
@@ -938,6 +942,41 @@ test("يجهز ملفات سور كاملة للبنا والحذيفي من ا�
     expect(new URL(descriptor.files[0].audioUrl).pathname).toBe(expectedPath)
     expect(descriptor.files[0].fileSize).toBeGreaterThan(0)
     expect(descriptor.totalSize).toBe(descriptor.files[0].fileSize)
+  }
+})
+
+test("يستخدم ملف سورة متصلًا للقراء الذين كانوا يتوقفون بين الآيات", async ({ request }) => {
+  for (const reciter of [8, 1001, 1002]) {
+    const response = await request.get("/api/quran", {
+      params: { page: "2", reciter: String(reciter) },
+    })
+    expect(response.ok()).toBeTruthy()
+    const payload = await response.json() as {
+      recitationSync?: string
+      verses: Array<{ verseKey: string; timestampFrom: number; timestampTo: number }>
+      tracks: Array<{
+        audioUrl: string
+        startMs: number
+        endMs: number
+        firstVerseIndex: number
+        lastVerseIndex: number
+        timingMode?: string
+      }>
+    }
+    expect(payload.recitationSync).toBe("verse")
+    expect(payload.tracks).toHaveLength(1)
+    expect(payload.tracks[0]).toMatchObject({
+      firstVerseIndex: 0,
+      lastVerseIndex: payload.verses.length - 1,
+      timingMode: "exact",
+    })
+    expect(payload.tracks[0].audioUrl).toMatch(/\.mp3$/)
+    expect(payload.tracks[0].startMs).toBeLessThan(payload.tracks[0].endMs)
+    for (let index = 1; index < payload.verses.length; index += 1) {
+      expect(payload.verses[index].timestampFrom).toBeGreaterThanOrEqual(
+        payload.verses[index - 1].timestampTo,
+      )
+    }
   }
 })
 
@@ -1460,7 +1499,9 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
-  expect(workerSource).toContain('VERSION = `wird-v51-')
+  expect(workerSource).toContain('VERSION = `wird-v52-')
+  expect(workerSource).toContain('"download.quranicaudio.com"')
+  expect(workerSource).toContain('"audio-cdn.tarteel.ai"')
   expect(workerSource).toContain('"server8.mp3quran.net"')
   expect(workerSource).toContain('"server9.mp3quran.net"')
   expect(workerSource).toContain('"cdn.mp3quran.net"')
@@ -1853,11 +1894,11 @@ test("يشغل ملف سورة البنا الموثوق بعد إعادة ال�
     }
   })
   expect(cachedDownload.fileCount).toBe(1)
-  expect(new URL(cachedDownload.audioUrl).pathname).toBe("/bna/001.mp3")
+  expect(new URL(cachedDownload.audioUrl).pathname).toBe("/quran/mahmood_ali_albana/001.mp3")
   expect(cachedDownload.audioCached).toBe(true)
   expect(cachedDownload.metadataAudioUrl).toBe(cachedDownload.audioUrl)
-  expect(cachedDownload.timingMode).toBe("chapter")
-  expect(cachedDownload.recitationSync).toBe("chapter")
+  expect(cachedDownload.timingMode).toBe("exact")
+  expect(cachedDownload.recitationSync).toBe("verse")
 
   await context.setOffline(true)
   try {
@@ -1894,7 +1935,7 @@ test("يدمج تشغيل سور البنا المحفوظة عند اشتراك
       tracks?: Array<{ chapterId?: number; timingMode?: string }>
     } : null
     return (payload?.tracks ?? [])
-      .filter((track) => track.timingMode === "chapter")
+      .filter((track) => track.timingMode === "exact")
       .map((track) => track.chapterId)
   })
   expect(chapterTracks).toEqual(expect.arrayContaining([112, 113]))
