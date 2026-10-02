@@ -518,14 +518,12 @@ const RECITERS = [
   { id: 22, name: "محمد أيوب", detail: "مرتل" },
   { id: 109, name: "عبدالرشيد صوفي", detail: "حفص" },
   { id: 1001, name: "محمود علي البنا", detail: "مرتل" },
-  { id: 1002, name: "علي بن عبدالرحمن الحذيفي", detail: "مرتل · آية بآية" },
+  { id: 1002, name: "علي بن عبدالرحمن الحذيفي", detail: "مرتل" },
   { id: 2001, name: "أحمد ديبان", detail: "مصحف الحدر · مزامنة بالسورة", syncScope: "chapter" },
   { id: 2002, name: "ياسر سلامة", detail: "مصحف الحدر · مزامنة بالصفحة", syncScope: "page" },
 ] as const
 
-const CHAPTER_DOWNLOAD_UNSUPPORTED_RECITERS = new Set([8, 22, 1001, 1002, 2002])
 const DOWNLOAD_RECITERS: readonly DownloadReciter[] = RECITERS
-  .filter((item) => !CHAPTER_DOWNLOAD_UNSUPPORTED_RECITERS.has(item.id))
   .map(({ id, name, detail }) => ({ id, name, detail }))
 
 const AHMED_DEBAN_RECITER_ID = 2001

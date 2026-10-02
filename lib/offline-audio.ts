@@ -58,7 +58,7 @@ async function hasUsableRecitationMetadata(
   response: Response | undefined,
   page: number,
   chapterId: number,
-  audioUrl?: string,
+  audioUrls?: string[],
 ) {
   if (!response?.ok) return false
   try {
@@ -66,11 +66,12 @@ async function hasUsableRecitationMetadata(
       page?: number
       tracks?: Array<{ chapterId?: number; audioUrl?: string }>
     }
+    const allowedAudioUrls = audioUrls?.length ? new Set(audioUrls) : null
     return payload.page === page && Boolean(
       payload.tracks?.some((track) => (
-        track.chapterId === chapterId &&
-        track.audioUrl &&
-        (!audioUrl || track.audioUrl === audioUrl)
+        track.audioUrl && (allowedAudioUrls
+          ? allowedAudioUrls.has(track.audioUrl)
+          : track.chapterId === chapterId)
       )),
     )
   } catch {
@@ -78,10 +79,81 @@ async function hasUsableRecitationMetadata(
   }
 }
 
+async function getCachedAudioDurationMs(audioUrl: string) {
+  const response = await window.caches.match(audioUrl)
+  if (!response?.ok) throw new Error("OFFLINE_AUDIO_MISSING")
+  const objectUrl = URL.createObjectURL(await response.blob())
+  try {
+    return await new Promise<number>((resolve, reject) => {
+      const audio = new Audio()
+      const timeout = window.setTimeout(() => reject(new Error("AUDIO_DURATION_TIMEOUT")), 15_000)
+      audio.preload = "metadata"
+      audio.onloadedmetadata = () => {
+        window.clearTimeout(timeout)
+        const durationMs = Math.round(audio.duration * 1000)
+        if (Number.isFinite(durationMs) && durationMs > 0) resolve(durationMs)
+        else reject(new Error("AUDIO_DURATION_UNAVAILABLE"))
+      }
+      audio.onerror = () => {
+        window.clearTimeout(timeout)
+        reject(new Error("AUDIO_DURATION_UNAVAILABLE"))
+      }
+      audio.src = objectUrl
+    })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+async function createChapterFallbackMetadata(
+  response: Response,
+  page: number,
+  chapterId: number,
+  audioUrl: string,
+  durationMs: number,
+) {
+  const payload = await response.clone().json() as {
+    page?: number
+    verses?: Array<{ chapterId?: number }>
+    tracks?: Array<{
+      chapterId?: number
+      timingMode?: string
+      firstVerseIndex?: number
+      [key: string]: unknown
+    }>
+    recitationSync?: string
+  }
+  if (payload.page !== page || !payload.verses?.length) return null
+  const matchingIndexes = payload.verses.flatMap((verse, index) =>
+    verse.chapterId === chapterId ? [index] : [])
+  if (matchingIndexes.length === 0) return null
+  const existingChapterTracks = (payload.tracks ?? []).filter((track) => (
+    track.timingMode === "chapter" && track.chapterId !== chapterId
+  ))
+  const chapterTrack = {
+    chapterId,
+    audioUrl,
+    startMs: 0,
+    endMs: durationMs,
+    firstVerseIndex: matchingIndexes[0],
+    lastVerseIndex: matchingIndexes.at(-1),
+    timingMode: "chapter",
+  }
+  return new Response(JSON.stringify({
+    ...payload,
+    tracks: [...existingChapterTracks, chapterTrack]
+      .sort((left, right) => (left.firstVerseIndex ?? 0) - (right.firstVerseIndex ?? 0)),
+    recitationSync: "chapter",
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  })
+}
+
 export async function cacheOfflineRecitationMetadata(options: {
   chapterId: number
   reciter: number
-  audioUrl?: string
+  audioUrls?: string[]
   signal?: AbortSignal
   onProgress?: (completed: number, total: number) => void
 }) {
@@ -90,17 +162,34 @@ export async function cacheOfflineRecitationMetadata(options: {
   }
   const pages = getOfflineRecitationPages(options.chapterId)
   const cache = await window.caches.open(OFFLINE_PAGE_CACHE)
+  const chapterAudioUrl = options.audioUrls?.length === 1 ? options.audioUrls[0] : null
+  let chapterDurationMs: number | null = null
   let completed = 0
 
   for (const page of pages) {
     const url = getOfflineRecitationPageUrl(page, options.reciter)
     let response = await cache.match(url)
-    if (!await hasUsableRecitationMetadata(response, page, options.chapterId, options.audioUrl)) {
+    if (!await hasUsableRecitationMetadata(response, page, options.chapterId, options.audioUrls)) {
+      const chapterFallbackSource = response
       const sharedResponse = await window.caches.match(url)
-      response = await hasUsableRecitationMetadata(sharedResponse, page, options.chapterId, options.audioUrl)
+      response = await hasUsableRecitationMetadata(sharedResponse, page, options.chapterId, options.audioUrls)
         ? sharedResponse
         : await fetch(url, { signal: options.signal })
-      if (!await hasUsableRecitationMetadata(response, page, options.chapterId, options.audioUrl)) {
+      if (!await hasUsableRecitationMetadata(response, page, options.chapterId, options.audioUrls)) {
+        const fallbackSource = chapterFallbackSource?.ok ? chapterFallbackSource : response
+        if (!fallbackSource?.ok || !chapterAudioUrl) {
+          throw new Error(`تعذر حفظ بيانات تشغيل الصفحة ${page}`)
+        }
+        chapterDurationMs ??= await getCachedAudioDurationMs(chapterAudioUrl)
+        response = await createChapterFallbackMetadata(
+          fallbackSource,
+          page,
+          options.chapterId,
+          chapterAudioUrl,
+          chapterDurationMs,
+        ) ?? undefined
+      }
+      if (!await hasUsableRecitationMetadata(response, page, options.chapterId, options.audioUrls)) {
         throw new Error(`تعذر حفظ بيانات تشغيل الصفحة ${page}`)
       }
       await cache.put(url, response!.clone())
@@ -112,7 +201,7 @@ export async function cacheOfflineRecitationMetadata(options: {
   return pages.length
 }
 
-export async function hasOfflineRecitationMetadata(chapterId: number, reciter: number, audioUrl?: string) {
+export async function hasOfflineRecitationMetadata(chapterId: number, reciter: number, audioUrls?: string[]) {
   if (typeof window === "undefined" || !("caches" in window)) return false
   const pages = getOfflineRecitationPages(chapterId)
   const cache = await window.caches.open(OFFLINE_PAGE_CACHE)
@@ -121,7 +210,7 @@ export async function hasOfflineRecitationMetadata(chapterId: number, reciter: n
       await cache.match(getOfflineRecitationPageUrl(page, reciter)),
       page,
       chapterId,
-      audioUrl,
+      audioUrls,
     )
   )))
   return matches.every(Boolean)

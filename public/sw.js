@@ -1,8 +1,9 @@
 const RELEASE = new URL(self.location.href).searchParams.get("release") || "base"
-const VERSION = `wird-v50-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
+const VERSION = `wird-v51-${RELEASE.replace(/[^a-zA-Z0-9_-]/g, "")}`
 const STATIC_CACHE = `${VERSION}-static`
 const PAGE_CACHE = `${VERSION}-pages`
 const QURAN_CACHE = "wird-quran-v1"
+const MANUAL_PAGE_CACHE = "wird-manual-pages-v2"
 const APP_CACHE_GENERATIONS = 3
 const NAVIGATION_TIMEOUT_MS = 4_000
 const PRECACHE_PAGES = ["/", "/offline"]
@@ -54,6 +55,9 @@ self.addEventListener("fetch", (event) => {
     "everyayah.com",
     "drive.usercontent.google.com",
     "archive.org",
+    "server8.mp3quran.net",
+    "server9.mp3quran.net",
+    "cdn.mp3quran.net",
   ].includes(url.hostname)
 
   if (request.headers.has("range")) {
@@ -220,9 +224,11 @@ async function quranPageNetworkFirst(request) {
       await cache.put(request, response.clone())
       return response
     }
-    return (await caches.match(request)) || response
+    return (await caches.open(MANUAL_PAGE_CACHE).then((cache) => cache.match(request))) ||
+      (await caches.match(request)) || response
   } catch {
-    return (await caches.match(request)) ||
+    return (await caches.open(MANUAL_PAGE_CACHE).then((cache) => cache.match(request))) ||
+      (await caches.match(request)) ||
       new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } })
   }
 }

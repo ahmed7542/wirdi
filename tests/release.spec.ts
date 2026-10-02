@@ -908,10 +908,37 @@ test("يمرر قائمة قراء تنزيل التلاوات", async ({ page }
 
   const reciterList = page.locator("[data-download-reciter-list]")
   await expect(reciterList).toBeVisible()
+  await expect(reciterList.getByRole("option", { name: "محمود علي البنا" })).toBeAttached()
+  await expect(reciterList.getByRole("option", { name: "علي بن عبدالرحمن الحذيفي" })).toBeAttached()
   await expect.poll(() => reciterList.evaluate((list) => list.scrollHeight > list.clientHeight)).toBe(true)
   await reciterList.hover()
   await page.mouse.wheel(0, 500)
   await expect.poll(() => reciterList.evaluate((list) => list.scrollTop)).toBeGreaterThan(0)
+})
+
+test("يجهز ملفات سور كاملة للبنا والحذيفي من المصدر الموثوق", async ({ request }) => {
+  for (const [reciter, expectedPath] of [[1001, "/bna/001.mp3"], [1002, "/hthfi/001.mp3"]] as const) {
+    const response = await request.get("/api/quran/offline-range", {
+      params: {
+        reciter: String(reciter),
+        startPage: "1",
+        endPage: "1",
+        startVerseKey: "1:1",
+        endVerseKey: "1:7",
+      },
+    })
+    expect(response.ok()).toBeTruthy()
+    const descriptor = await response.json() as {
+      fileMode: string
+      totalSize: number
+      files: Array<{ audioUrl: string; fileSize: number }>
+    }
+    expect(descriptor.fileMode).toBe("chapters")
+    expect(descriptor.files).toHaveLength(1)
+    expect(new URL(descriptor.files[0].audioUrl).pathname).toBe(expectedPath)
+    expect(descriptor.files[0].fileSize).toBeGreaterThan(0)
+    expect(descriptor.totalSize).toBe(descriptor.files[0].fileSize)
+  }
 })
 
 test("يوضح تبويبات الإعدادات ويحسن إدارة أقسام العلامات", async ({ page }) => {
@@ -1433,7 +1460,10 @@ test("يعترض Service Worker مصدر حدر أحمد ديبان", async ({ r
   expect(pageResponse.ok()).toBeTruthy()
   const workerSource = await workerResponse.text()
   expect(workerSource).toContain('"archive.org"')
-  expect(workerSource).toContain('VERSION = `wird-v50-')
+  expect(workerSource).toContain('VERSION = `wird-v51-')
+  expect(workerSource).toContain('"server8.mp3quran.net"')
+  expect(workerSource).toContain('"server9.mp3quran.net"')
+  expect(workerSource).toContain('"cdn.mp3quran.net"')
   expect(workerSource).toContain('"/icons/wird-mark.png"')
   expect(workerSource).toContain('QURAN_CACHE = "wird-quran-v1"')
   expect(workerSource).toContain("matchCachedStaticAsset")
@@ -1766,6 +1796,108 @@ test("يشغل السورة المنزلة بعد إعادة فتح التطبي
   } finally {
     await context.setOffline(false)
   }
+})
+
+test("يشغل ملف سورة البنا الموثوق بعد إعادة الفتح دون اتصال", async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => {
+    window.localStorage.setItem("wird-reciter", "1001")
+    window.localStorage.setItem("wird-last-reading-v1", JSON.stringify({
+      page: 1,
+      positionMs: 0,
+      reciter: 1001,
+      viewMode: "text",
+      readingMode: "page",
+      updatedAt: Date.now(),
+    }))
+  })
+  await openMushaf(page)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?release=offline-albanna-chapter-test", {
+      scope: "/",
+      updateViaCache: "none",
+    })
+    await navigator.serviceWorker.ready
+  })
+  await page.reload({ waitUntil: "networkidle" })
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التنزيلات" }).click()
+  const downloads = page.locator('[data-settings-content="downloads"]')
+  await expect(downloads.getByRole("combobox", { name: /اختيار قارئ التنزيل/ })).toContainText("محمود علي البنا")
+  await downloads.getByRole("checkbox").first().click()
+  await downloads.getByRole("button", { name: "تنزيل 1 سورة" }).click()
+  await expect(page.getByText("تم تنزيل 1 سورة بصوت محمود علي البنا")).toBeVisible({ timeout: 60_000 })
+
+  const cachedDownload = await page.evaluate(async () => {
+    const entries = JSON.parse(window.localStorage.getItem("wird-offline-surahs") ?? "[]") as Array<{
+      chapterId: number
+      reciter: number
+      files?: Array<{ audioUrl: string }>
+    }>
+    const entry = entries.find((item) => item.chapterId === 1 && item.reciter === 1001)
+    const metadata = await (await window.caches.open("wird-manual-pages-v2"))
+      .match("/api/quran?page=1&reciter=1001")
+    const payload = metadata?.ok ? await metadata.json() as {
+      recitationSync?: string
+      tracks?: Array<{ audioUrl?: string; timingMode?: string }>
+    } : null
+    return {
+      fileCount: entry?.files?.length ?? 0,
+      audioUrl: entry?.files?.[0]?.audioUrl ?? "",
+      audioCached: Boolean(entry?.files?.[0] && await window.caches.match(entry.files[0].audioUrl)),
+      metadataAudioUrl: payload?.tracks?.[0]?.audioUrl ?? "",
+      timingMode: payload?.tracks?.[0]?.timingMode ?? "",
+      recitationSync: payload?.recitationSync ?? "",
+    }
+  })
+  expect(cachedDownload.fileCount).toBe(1)
+  expect(new URL(cachedDownload.audioUrl).pathname).toBe("/bna/001.mp3")
+  expect(cachedDownload.audioCached).toBe(true)
+  expect(cachedDownload.metadataAudioUrl).toBe(cachedDownload.audioUrl)
+  expect(cachedDownload.timingMode).toBe("chapter")
+  expect(cachedDownload.recitationSync).toBe("chapter")
+
+  await context.setOffline(true)
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-qcf-line]").first()).toBeVisible()
+    await page.getByRole("button", { name: "تشغيل", exact: true }).click()
+    await expect(page.getByText(/غير متصل بالإنترنت، وتلاوة القارئ/)).toHaveCount(0)
+    await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0)
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
+test("يدمج تشغيل سور البنا المحفوظة عند اشتراكها في صفحة", async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.addInitScript(() => window.localStorage.setItem("wird-reciter", "1001"))
+  await openMushaf(page)
+  await page.getByRole("button", { name: "إعدادات التطبيق" }).click()
+  await page.getByRole("tab", { name: "التنزيلات" }).click()
+  const downloads = page.locator('[data-settings-content="downloads"]')
+  const search = downloads.getByPlaceholder("ابحث عن سورة...")
+
+  await search.fill("الإخلاص")
+  await downloads.getByRole("checkbox").first().click()
+  await search.fill("الفلق")
+  await downloads.getByRole("checkbox").first().click()
+  await downloads.getByRole("button", { name: "تنزيل 2 سورة" }).click()
+  await expect(page.getByText("تم تنزيل 2 سورة بصوت محمود علي البنا")).toBeVisible({ timeout: 60_000 })
+
+  const chapterTracks = await page.evaluate(async () => {
+    const response = await (await window.caches.open("wird-manual-pages-v2"))
+      .match("/api/quran?page=604&reciter=1001")
+    const payload = response?.ok ? await response.json() as {
+      tracks?: Array<{ chapterId?: number; timingMode?: string }>
+    } : null
+    return (payload?.tracks ?? [])
+      .filter((track) => track.timingMode === "chapter")
+      .map((track) => track.chapterId)
+  })
+  expect(chapterTracks).toEqual(expect.arrayContaining([112, 113]))
 })
 
 test("يبقي زر التشغيل مفعّلًا ويوضح غياب التلاوة دون اتصال", async ({ page, context }) => {

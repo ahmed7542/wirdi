@@ -15,14 +15,16 @@ import {
   getHadrAudioFile,
   YASSER_SALAMA_RECITER_ID,
 } from "@/lib/hadr-recitations"
+import {
+  AL_BANNA_RECITER_ID,
+  AL_HUDHAIFY_RECITER_ID,
+  getMp3QuranChapterAudio,
+  MP3QURAN_CHAPTER_RECITER_IDS,
+} from "@/lib/mp3quran-recitations"
 import { ALIGNED_RECITER_IDS, getAlignedChapterAudio } from "@/lib/quran-recitation-data"
 
 const QURAN_API_URL = "https://api.quran.com/api/v4"
-const AL_BANNA_RECITER_ID = 1001
-const AL_HUDHAIFY_RECITER_ID = 1002
 const AL_MINSHAWI_MUJAWWAD_RECITER_ID = 8
-const AL_BANNA_AUDIO_BASE = "https://everyayah.com/data/mahmoud_ali_al_banna_32kbps"
-const AL_HUDHAIFY_AUDIO_BASE = "https://everyayah.com/data/Hudhaify_128kbps"
 const VERSE_AUDIO_BASE = "https://verses.quran.com"
 const VALID_RECITERS = new Set([
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19,
@@ -59,10 +61,6 @@ function parseVerseKey(value: string | null) {
 
 function verseKey(pair: readonly [number, number]) {
   return `${pair[0]}:${pair[1]}`
-}
-
-function everyAyahUrl(baseUrl: string, pair: readonly [number, number]) {
-  return `${baseUrl}/${String(pair[0]).padStart(3, "0")}${String(pair[1]).padStart(3, "0")}.mp3`
 }
 
 async function fileSizeFor(url: string) {
@@ -139,11 +137,7 @@ export async function GET(request: Request) {
         }
       }))
       fileMode = "pages"
-    } else if (
-      reciter === AL_BANNA_RECITER_ID ||
-      reciter === AL_HUDHAIFY_RECITER_ID ||
-      reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID
-    ) {
+    } else if (reciter === AL_MINSHAWI_MUJAWWAD_RECITER_ID) {
       const verseCount = endAyahId - startAyahId + 1
       if (verseCount > MAX_VERSE_FILES) {
         return Response.json(
@@ -153,70 +147,47 @@ export async function GET(request: Request) {
       }
       const ayahIds = Array.from({ length: verseCount }, (_, index) => startAyahId + index)
       const pairs = ayahIds.map((ayahId) => findSurahAyahByAyahId(ayahId))
-      if (reciter === AL_BANNA_RECITER_ID || reciter === AL_HUDHAIFY_RECITER_ID) {
-        const audioBase = reciter === AL_HUDHAIFY_RECITER_ID ? AL_HUDHAIFY_AUDIO_BASE : AL_BANNA_AUDIO_BASE
-        files = await mapWithConcurrency(pairs, 10, async (pair) => {
-          const audioUrl = everyAyahUrl(audioBase, pair)
-          return {
-            id: verseKey(pair),
-            label: `الآية ${verseKey(pair)}`,
-            audioUrl,
-            fileSize: await fileSizeFor(audioUrl),
-          }
+      const needsBismillah = pairs.some(([chapter, verse]) => verse === 1 && chapter !== 1 && chapter !== 9)
+      const chapters = [...new Set([
+        ...pairs.map(([chapter]) => chapter),
+        ...(needsBismillah ? [1] : []),
+      ])]
+      const chapterFiles = (await Promise.all(chapters.map(async (chapter) => {
+        const url = new URL(`${QURAN_API_URL}/recitations/${reciter}/by_chapter/${chapter}`)
+        url.searchParams.set("per_page", "300")
+        url.searchParams.set("fields", "verse_key,url")
+        const response = await fetch(url, { next: { revalidate: 60 * 60 * 24 * 30 } })
+        if (!response.ok) throw new Error(`Ayah audio returned ${response.status}`)
+        return ((await response.json()) as AyahAudioResponse).audio_files ?? []
+      }))).flat()
+      const audioByVerse = new Map(chapterFiles.map((audio) => [audio.verse_key, audio.url]))
+      const resolveAudioUrl = (key: string) => {
+        const relativeUrl = audioByVerse.get(key)
+        if (!relativeUrl) throw new Error(`Missing ayah audio ${key}`)
+        return relativeUrl.startsWith("http")
+          ? relativeUrl
+          : relativeUrl.startsWith("//")
+            ? `https:${relativeUrl}`
+            : `${VERSE_AUDIO_BASE}/${relativeUrl.replace(/^\//, "")}`
+      }
+      files = await mapWithConcurrency(pairs, 10, async (pair) => {
+        const key = verseKey(pair)
+        const audioUrl = resolveAudioUrl(key)
+        return {
+          id: key,
+          label: `الآية ${key}`,
+          audioUrl,
+          fileSize: await fileSizeFor(audioUrl),
+        }
+      })
+      if (needsBismillah && !files.some((file) => file.id === "1:1")) {
+        const audioUrl = resolveAudioUrl("1:1")
+        files.unshift({
+          id: "bismillah",
+          label: "البسملة",
+          audioUrl,
+          fileSize: await fileSizeFor(audioUrl),
         })
-        const needsBismillah = pairs.some(([chapter, verse]) => verse === 1 && chapter !== 1 && chapter !== 9)
-        if (needsBismillah && !files.some((file) => file.id === "1:1")) {
-          const audioUrl = everyAyahUrl(audioBase, [1, 1])
-          files.unshift({
-            id: "bismillah",
-            label: "البسملة",
-            audioUrl,
-            fileSize: await fileSizeFor(audioUrl),
-          })
-        }
-      } else {
-        const needsBismillah = pairs.some(([chapter, verse]) => verse === 1 && chapter !== 1 && chapter !== 9)
-        const chapters = [...new Set([
-          ...pairs.map(([chapter]) => chapter),
-          ...(needsBismillah ? [1] : []),
-        ])]
-        const chapterFiles = (await Promise.all(chapters.map(async (chapter) => {
-          const url = new URL(`${QURAN_API_URL}/recitations/${reciter}/by_chapter/${chapter}`)
-          url.searchParams.set("per_page", "300")
-          url.searchParams.set("fields", "verse_key,url")
-          const response = await fetch(url, { next: { revalidate: 60 * 60 * 24 * 30 } })
-          if (!response.ok) throw new Error(`Ayah audio returned ${response.status}`)
-          return ((await response.json()) as AyahAudioResponse).audio_files ?? []
-        }))).flat()
-        const audioByVerse = new Map(chapterFiles.map((audio) => [audio.verse_key, audio.url]))
-        const resolveAudioUrl = (key: string) => {
-          const relativeUrl = audioByVerse.get(key)
-          if (!relativeUrl) throw new Error(`Missing ayah audio ${key}`)
-          return relativeUrl.startsWith("http")
-            ? relativeUrl
-            : relativeUrl.startsWith("//")
-              ? `https:${relativeUrl}`
-              : `${VERSE_AUDIO_BASE}/${relativeUrl.replace(/^\//, "")}`
-        }
-        files = await mapWithConcurrency(pairs, 10, async (pair) => {
-          const key = verseKey(pair)
-          const audioUrl = resolveAudioUrl(key)
-          return {
-            id: key,
-            label: `الآية ${key}`,
-            audioUrl,
-            fileSize: await fileSizeFor(audioUrl),
-          }
-        })
-        if (needsBismillah && !files.some((file) => file.id === "1:1")) {
-          const audioUrl = resolveAudioUrl("1:1")
-          files.unshift({
-            id: "bismillah",
-            label: "البسملة",
-            audioUrl,
-            fileSize: await fileSizeFor(audioUrl),
-          })
-        }
       }
       fileMode = "verses"
     } else {
@@ -228,7 +199,9 @@ export async function GET(request: Request) {
       )
       const chapterFiles = await mapWithConcurrency(chapters, 8, async (chapter) => {
         let audioUrl: string | undefined
-        if (reciter === AHMED_DEBAN_RECITER_ID) {
+        if (MP3QURAN_CHAPTER_RECITER_IDS.has(reciter)) {
+          audioUrl = (await getMp3QuranChapterAudio(reciter, chapter)).audioUrl
+        } else if (reciter === AHMED_DEBAN_RECITER_ID) {
           audioUrl = (await getHadrAudioFile(reciter, chapter)).audioUrl
         } else if (ALIGNED_RECITER_IDS.has(reciter)) {
           audioUrl = (await getAlignedChapterAudio(reciter, chapter)).audioUrl

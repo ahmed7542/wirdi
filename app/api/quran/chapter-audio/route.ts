@@ -5,13 +5,19 @@ import {
   getHadrAudioFile,
   YASSER_SALAMA_RECITER_ID,
 } from "@/lib/hadr-recitations"
+import {
+  AL_BANNA_RECITER_ID,
+  AL_HUDHAIFY_RECITER_ID,
+  getMp3QuranChapterAudio,
+  MP3QURAN_CHAPTER_RECITER_IDS,
+} from "@/lib/mp3quran-recitations"
 import { ALIGNED_RECITER_IDS, getAlignedChapterAudio } from "@/lib/quran-recitation-data"
 
 const QURAN_API_URL = "https://api.quran.com/api/v4"
-const AL_HUDHAIFY_RECITER_ID = 1002
 const VALID_RECITER_IDS = [
   1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 17, 18, 19,
-  22, 43, 88, 91, 97, 104, 109, AL_HUDHAIFY_RECITER_ID, AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
+  22, 43, 88, 91, 97, 104, 109, AL_BANNA_RECITER_ID, AL_HUDHAIFY_RECITER_ID,
+  AHMED_DEBAN_RECITER_ID, YASSER_SALAMA_RECITER_ID,
 ] as const
 
 type ChapterAudioResponse = {
@@ -33,11 +39,9 @@ export async function GET(request: Request) {
     return Response.json({ error: "القارئ المحدد غير متاح" }, { status: 400 })
   }
 
-  if (reciter === YASSER_SALAMA_RECITER_ID || reciter === AL_HUDHAIFY_RECITER_ID) {
+  if (reciter === YASSER_SALAMA_RECITER_ID) {
     return Response.json(
-      { error: reciter === AL_HUDHAIFY_RECITER_ID
-        ? "تلاوة الحذيفي مقسمة حسب الآيات؛ استخدم تنزيل نطاق الآيات"
-        : "مصحف ياسر سلامة مقسم حسب الصفحات؛ استخدم تنزيل نطاق الصفحات" },
+      { error: "مصحف ياسر سلامة مقسم حسب الصفحات؛ استخدم تنزيل نطاق الصفحات" },
       { status: 400 },
     )
   }
@@ -46,7 +50,9 @@ export async function GET(request: Request) {
     let audioUrl: string | undefined
     let format = "mp3"
     let catalogFileSize = 0
-    if (reciter === AHMED_DEBAN_RECITER_ID) {
+    if (MP3QURAN_CHAPTER_RECITER_IDS.has(reciter)) {
+      audioUrl = (await getMp3QuranChapterAudio(reciter, chapter)).audioUrl
+    } else if (reciter === AHMED_DEBAN_RECITER_ID) {
       const file = await getHadrAudioFile(reciter, chapter)
       audioUrl = file.audioUrl
       catalogFileSize = file.size

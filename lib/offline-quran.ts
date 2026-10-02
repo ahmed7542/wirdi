@@ -162,6 +162,11 @@ async function inspectCachedResources(cache: Cache, resources: OfflineQuranResou
   return matches
 }
 
+async function matchOfflineResource(url: string) {
+  const manualCache = await window.caches.open(OFFLINE_PAGE_CACHE)
+  return (await manualCache.match(url)) ?? window.caches.match(url)
+}
+
 export async function loadOfflineQuranPage<T>(page: number, reciter: number, allowReciterFallback = true) {
   if (
     typeof window === "undefined" ||
@@ -176,12 +181,12 @@ export async function loadOfflineQuranPage<T>(page: number, reciter: number, all
     : [reciter]
   for (const sourceReciter of sourceReciters) {
     const url = `/api/quran?page=${page}&reciter=${sourceReciter}`
-    const response = await window.caches.match(url)
+    const response = await matchOfflineResource(url)
     const payload = await readValidQuranPage(response, page)
     if (payload) return { data: payload as T, reciter: sourceReciter }
   }
 
-  const readingResponse = await window.caches.match(getOfflineQuranPageUrl(page))
+  const readingResponse = await matchOfflineResource(getOfflineQuranPageUrl(page))
   const readingPayload = await readValidQuranPage(readingResponse, page)
   return readingPayload ? { data: readingPayload as T, reciter: OFFLINE_QURAN_RECITER } : null
 }
@@ -195,7 +200,7 @@ export async function loadOfflineQuranReadingPage<T>(page: number) {
     page > OFFLINE_QURAN_PAGE_COUNT
   ) return null
 
-  const response = await window.caches.match(getOfflineQuranPageUrl(page))
+  const response = await matchOfflineResource(getOfflineQuranPageUrl(page))
   const payload = await readValidQuranPage(response, page)
   return payload ? payload as T : null
 }

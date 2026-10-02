@@ -30,6 +30,7 @@ import {
   Upload,
   X,
 } from "lucide-react"
+import { getSurahMeta, type Surah } from "quran-meta/hafs"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 
@@ -84,6 +85,7 @@ import {
   OFFLINE_AUDIO_CACHE,
   OFFLINE_PAGE_CACHE,
   cacheOfflineRecitationMetadata,
+  getOfflineRecitationPages,
   hasOfflineRecitationMetadata,
   loadOfflineRangePackages,
   saveOfflineRangePackages,
@@ -135,20 +137,14 @@ type Chapter = {
   name: string
 }
 
-type AudioVariant = {
-  id: string
-  label: string
-  audioUrl: string
-  fileSize: number
-  format: string
-}
-
 type PendingDownload = {
   chapter: Chapter
   chapterName: string
   reciter: number
   reciterName: string
-  variants: AudioVariant[]
+  fileMode: OfflineRangePackage["fileMode"]
+  files: OfflineRangePackage["files"]
+  totalSize: number
 }
 
 export type DownloadReciter = {
@@ -170,6 +166,8 @@ type OfflineSurah = {
   reciter: number
   reciterName: string
   audioUrl: string
+  files?: OfflineRangePackage["files"]
+  fileMode?: OfflineRangePackage["fileMode"]
   size: number
   qualityLabel?: string
 }
@@ -251,6 +249,12 @@ function formatBackupDate(value: string | null, language: "ar" | "en") {
   }).format(date)
 }
 
+function getOfflineSurahFiles(entry: OfflineSurah): OfflineRangePackage["files"] {
+  return entry.files?.length
+    ? entry.files
+    : [{ id: String(entry.chapterId), label: `سورة ${entry.chapterName}`, audioUrl: entry.audioUrl, fileSize: entry.size }]
+}
+
 function loadOfflineEntries() {
   try {
     return JSON.parse(window.localStorage.getItem(OFFLINE_SURAH_STORAGE_KEY) ?? "[]") as OfflineSurah[]
@@ -323,7 +327,6 @@ export function AppSettings({
   const [editingBookmarkCategoryId, setEditingBookmarkCategoryId] = useState<string | null>(null)
   const [bookmarkCategoryNames, setBookmarkCategoryNames] = useState<Record<string, string>>({})
   const [newBookmarkCategoryName, setNewBookmarkCategoryName] = useState("")
-  const [selectedVariantId, setSelectedVariantId] = useState("original")
   const [downloadReciter, setDownloadReciter] = useState(reciter)
   const [downloadReciterOpen, setDownloadReciterOpen] = useState(false)
   const [downloadReciterQuery, setDownloadReciterQuery] = useState("")
@@ -440,7 +443,8 @@ export function AppSettings({
     void (async () => {
       const missingEntries: OfflineSurah[] = []
       for (const entry of entries) {
-        if (!await hasOfflineRecitationMetadata(entry.chapterId, entry.reciter, entry.audioUrl)) {
+        const audioUrls = getOfflineSurahFiles(entry).map((file) => file.audioUrl)
+        if (!await hasOfflineRecitationMetadata(entry.chapterId, entry.reciter, audioUrls)) {
           missingEntries.push(entry)
         }
       }
@@ -450,7 +454,7 @@ export function AppSettings({
         await cacheOfflineRecitationMetadata({
           chapterId: entry.chapterId,
           reciter: entry.reciter,
-          audioUrl: entry.audioUrl,
+          audioUrls: getOfflineSurahFiles(entry).map((file) => file.audioUrl),
           signal: controller.signal,
         })
       }
@@ -474,11 +478,13 @@ export function AppSettings({
     let cancelled = false
     const refreshOfflineStatus = async () => {
       const files = new Map<string, OfflineMissingFile>()
-      entries.forEach((entry) => files.set(entry.audioUrl, {
-        audioUrl: entry.audioUrl,
-        label: `سورة ${entry.chapterName}`,
-        fileSize: entry.size,
-      }))
+      entries.forEach((entry) => {
+        getOfflineSurahFiles(entry).forEach((file) => files.set(file.audioUrl, {
+          audioUrl: file.audioUrl,
+          label: file.label,
+          fileSize: file.fileSize,
+        }))
+      })
       rangePackages.forEach((rangePackage) => {
         rangePackage.files.forEach((file) => files.set(file.audioUrl, {
           audioUrl: file.audioUrl,
@@ -600,14 +606,70 @@ export function AppSettings({
     [offlineMissingFiles],
   )
   const downloadedSize = useMemo(() => {
-    const files = new Map(entries.map((entry) => [entry.audioUrl, entry.size]))
+    const files = new Map<string, number>()
+    for (const entry of entries) {
+      for (const file of getOfflineSurahFiles(entry)) files.set(file.audioUrl, file.fileSize)
+    }
     for (const rangePackage of rangePackages) {
       for (const file of rangePackage.files) files.set(file.audioUrl, file.fileSize)
     }
     return [...files.values()].reduce((total, size) => total + size, 0)
   }, [entries, rangePackages])
-  const pendingVariant = pendingDownload?.variants.find((item) => item.id === selectedVariantId) ??
-    pendingDownload?.variants[0]
+
+  const requestChapterDownload = async (chapter: Chapter, targetReciter: DownloadReciter, signal?: AbortSignal) => {
+    const pages = getOfflineRecitationPages(chapter.id)
+    const chapterMeta = getSurahMeta(chapter.id as Surah)
+    const query = new URLSearchParams({
+      reciter: String(targetReciter.id),
+      startPage: String(pages[0]),
+      endPage: String(pages.at(-1)),
+      startVerseKey: `${chapter.id}:1`,
+      endVerseKey: `${chapter.id}:${chapterMeta.ayahCount}`,
+    })
+    const response = await fetch(`/api/quran/offline-range?${query}`, { signal })
+    const descriptor = await response.json() as {
+      fileMode?: OfflineRangePackage["fileMode"]
+      files?: OfflineRangePackage["files"]
+      totalSize?: number
+      error?: string
+    }
+    if (!response.ok || !descriptor.files?.length || !descriptor.fileMode) {
+      throw new Error(descriptor.error || "تعذر تجهيز ملفات السورة")
+    }
+    return {
+      chapter,
+      chapterName: chapter.name,
+      reciter: targetReciter.id,
+      reciterName: targetReciter.name,
+      fileMode: descriptor.fileMode,
+      files: descriptor.files,
+      totalSize: descriptor.totalSize ?? descriptor.files.reduce((total, file) => total + file.fileSize, 0),
+    } satisfies PendingDownload
+  }
+
+  const cacheChapterDownload = async (
+    descriptor: PendingDownload,
+    signal: AbortSignal,
+    onProgress?: (completed: number, total: number) => void,
+  ) => {
+    const cache = await window.caches.open(OFFLINE_AUDIO_CACHE)
+    let completed = 0
+    for (const file of descriptor.files) {
+      if (!await cache.match(file.audioUrl)) {
+        const response = await fetch(file.audioUrl, { mode: "cors", signal })
+        if (!response.ok) throw new Error(`تعذر تنزيل ${file.label}`)
+        await cache.put(file.audioUrl, response)
+      }
+      completed += 1
+      onProgress?.(completed, descriptor.files.length)
+    }
+    await cacheOfflineRecitationMetadata({
+      chapterId: descriptor.chapter.id,
+      reciter: descriptor.reciter,
+      audioUrls: descriptor.files.map((file) => file.audioUrl),
+      signal,
+    })
+  }
 
   const prepareDownload = async (chapter: Chapter) => {
     if (!("caches" in window)) {
@@ -616,37 +678,11 @@ export function AppSettings({
     }
     setPreparingChapter(chapter.id)
     try {
-      const response = await fetch(`/api/quran/chapter-audio?chapter=${chapter.id}&reciter=${downloadReciter}`)
-      const descriptor = (await response.json()) as {
-        chapterName?: string
-        audioUrl?: string
-        fileSize?: number
-        format?: string
-        variants?: AudioVariant[]
-        error?: string
-      }
-      if (!response.ok || !descriptor.audioUrl) {
-        throw new Error(descriptor.error || "Unable to resolve audio")
-      }
-      const variants = descriptor.variants?.length
-        ? descriptor.variants
-        : [{
-            id: "original",
-            label: "الجودة الأصلية",
-            audioUrl: descriptor.audioUrl,
-            fileSize: descriptor.fileSize ?? 0,
-            format: descriptor.format ?? "mp3",
-          }]
-      setSelectedVariantId(variants[0].id)
-      setPendingDownload({
-        chapter,
-        chapterName: descriptor.chapterName ?? chapter.name,
-        reciter: downloadReciter,
-        reciterName: selectedDownloadReciter?.name ?? reciterName,
-        variants,
-      })
-    } catch {
-      toast.error("تعذر معرفة حجم ملف السورة الآن")
+      const targetReciter = selectedDownloadReciter
+      if (!targetReciter) throw new Error("القارئ المحدد غير متاح")
+      setPendingDownload(await requestChapterDownload(chapter, targetReciter))
+    } catch (error) {
+      toast.error((error as Error).message || "تعذر معرفة حجم ملفات السورة الآن")
     } finally {
       setPreparingChapter(null)
     }
@@ -654,11 +690,8 @@ export function AppSettings({
 
   const downloadChapter = async () => {
     if (!pendingDownload) return
-    const variant = pendingDownload.variants.find((item) => item.id === selectedVariantId) ?? pendingDownload.variants[0]
-    const chapter = pendingDownload.chapter
-    const chapterName = pendingDownload.chapterName
-    const targetReciter = pendingDownload.reciter
-    const targetReciterName = pendingDownload.reciterName
+    const descriptor = pendingDownload
+    const chapter = descriptor.chapter
     const controller = new AbortController()
     downloadControllerRef.current = controller
     setPendingDownload(null)
@@ -669,78 +702,38 @@ export function AppSettings({
       await navigator.storage?.persist?.()
       const estimate = await navigator.storage?.estimate?.()
       const remainingStorage = (estimate?.quota ?? 0) - (estimate?.usage ?? 0)
-      if (variant.fileSize > 0 && estimate?.quota && remainingStorage < variant.fileSize) {
+      if (descriptor.totalSize > 0 && estimate?.quota && remainingStorage < descriptor.totalSize) {
         throw new Error("INSUFFICIENT_STORAGE")
       }
 
-      const audioResponse = await fetch(variant.audioUrl, {
-        mode: "cors",
-        signal: controller.signal,
+      const existingEntry = entries.find((item) => item.key === `${descriptor.reciter}-${chapter.id}`)
+      await cacheChapterDownload(descriptor, controller.signal, (completed, total) => {
+        setDownloadProgress(Math.round((completed / total) * 100))
       })
-      if (!audioResponse.ok) throw new Error("Unable to download audio")
-      const size = variant.fileSize || Number(audioResponse.headers.get("content-length")) || 0
-      const cache = await window.caches.open(OFFLINE_AUDIO_CACHE)
-      const existingEntry = entries.find((item) => item.key === `${targetReciter}-${chapter.id}`)
-      if (existingEntry && existingEntry.audioUrl !== variant.audioUrl) {
-        await cache.delete(existingEntry.audioUrl)
-      }
 
-      if (audioResponse.body) {
-        const reader = audioResponse.body.getReader()
-        let received = 0
-        let lastProgress = -1
-        const stream = new ReadableStream<Uint8Array>({
-          async pull(streamController) {
-            const result = await reader.read()
-            if (result.done) {
-              setDownloadProgress(90)
-              streamController.close()
-              return
-            }
-            received += result.value.byteLength
-            const progress = size > 0 ? Math.min(89, Math.round((received / size) * 90)) : 0
-            if (progress !== lastProgress) {
-              lastProgress = progress
-              setDownloadProgress(progress)
-            }
-            streamController.enqueue(result.value)
-          },
-          cancel(reason) {
-            return reader.cancel(reason)
-          },
-        })
-        await cache.put(
-          variant.audioUrl,
-          new Response(stream, {
-            status: audioResponse.status,
-            statusText: audioResponse.statusText,
-            headers: audioResponse.headers,
-          }),
-        )
-      } else {
-        await cache.put(variant.audioUrl, audioResponse)
-        setDownloadProgress(90)
+      const retainedUrls = new Set(descriptor.files.map((file) => file.audioUrl))
+      if (existingEntry) {
+        const cache = await window.caches.open(OFFLINE_AUDIO_CACHE)
+        await Promise.all(getOfflineSurahFiles(existingEntry).map((file) => (
+          retainedUrls.has(file.audioUrl) ? false : cache.delete(file.audioUrl)
+        )))
       }
-
-      await cacheOfflineRecitationMetadata({
-        chapterId: chapter.id,
-        reciter: targetReciter,
-        audioUrl: variant.audioUrl,
-        signal: controller.signal,
-        onProgress: (completed, total) => {
-          setDownloadProgress(90 + Math.round((completed / total) * 10))
-        },
-      })
 
       const entry: OfflineSurah = {
-        key: `${targetReciter}-${chapter.id}`,
+        key: `${descriptor.reciter}-${chapter.id}`,
         chapterId: chapter.id,
-        chapterName,
-        reciter: targetReciter,
-        reciterName: targetReciterName,
-        audioUrl: variant.audioUrl,
-        size,
-        qualityLabel: variant.label,
+        chapterName: descriptor.chapterName,
+        reciter: descriptor.reciter,
+        reciterName: descriptor.reciterName,
+        audioUrl: descriptor.files[0].audioUrl,
+        files: descriptor.files,
+        fileMode: descriptor.fileMode,
+        size: descriptor.totalSize,
+        qualityLabel: descriptor.fileMode === "chapters"
+          ? "ملف السورة"
+          : descriptor.fileMode === "pages"
+            ? `${descriptor.files.length} ملفات صفحات`
+            : `${descriptor.files.length} ملفات آيات`,
       }
       persistEntries([entry, ...entries.filter((item) => item.key !== entry.key)])
       await refreshStorage()
@@ -787,89 +780,41 @@ export function AppSettings({
         const chapter = selectedChapters[index]
         setBulkDownloadLabel(`سورة ${chapter.name} · ${index + 1} من ${selectedChapters.length}`)
         try {
-          const descriptorResponse = await fetch(
-            `/api/quran/chapter-audio?chapter=${chapter.id}&reciter=${targetReciter.id}`,
-            { signal: controller.signal },
-          )
-          const descriptor = (await descriptorResponse.json()) as {
-            chapterName?: string
-            audioUrl?: string
-            fileSize?: number
-            format?: string
-            variants?: AudioVariant[]
-            error?: string
-          }
-          if (!descriptorResponse.ok || !descriptor.audioUrl) {
-            throw new Error(descriptor.error || "تعذر تجهيز ملف السورة")
-          }
-          const variant = descriptor.variants?.[0] ?? {
-            id: "original",
-            label: "الجودة الأصلية",
-            audioUrl: descriptor.audioUrl,
-            fileSize: descriptor.fileSize ?? 0,
-            format: descriptor.format ?? "mp3",
-          }
+          const descriptor = await requestChapterDownload(chapter, targetReciter, controller.signal)
           const estimate = await navigator.storage?.estimate?.()
           const availableStorage = (estimate?.quota ?? 0) - (estimate?.usage ?? 0)
-          if (estimate?.quota && variant.fileSize > 0 && availableStorage < variant.fileSize) {
+          if (estimate?.quota && descriptor.totalSize > 0 && availableStorage < descriptor.totalSize) {
             throw new Error("INSUFFICIENT_STORAGE")
           }
 
           const existingEntry = nextEntries.find((item) =>
             item.reciter === targetReciter.id && item.chapterId === chapter.id)
-          if (existingEntry && existingEntry.audioUrl !== variant.audioUrl) {
-            await cache.delete(existingEntry.audioUrl)
-          }
-          let size = variant.fileSize
-          if (!(await cache.match(variant.audioUrl))) {
-            const audioResponse = await fetch(variant.audioUrl, { mode: "cors", signal: controller.signal })
-            if (!audioResponse.ok) throw new Error("تعذر تنزيل ملف السورة")
-            size ||= Number(audioResponse.headers.get("content-length")) || 0
-            if (audioResponse.body) {
-              const reader = audioResponse.body.getReader()
-              let received = 0
-              const stream = new ReadableStream<Uint8Array>({
-                async pull(streamController) {
-                  const result = await reader.read()
-                  if (result.done) {
-                    streamController.close()
-                    return
-                  }
-                  received += result.value.byteLength
-                  const fileProgress = size > 0 ? Math.min(received / size, 0.99) : 0
-                  setBulkDownloadProgress(Math.round(((index + fileProgress) / selectedChapters.length) * 100))
-                  streamController.enqueue(result.value)
-                },
-                cancel(reason) {
-                  return reader.cancel(reason)
-                },
-              })
-              await cache.put(variant.audioUrl, new Response(stream, {
-                status: audioResponse.status,
-                statusText: audioResponse.statusText,
-                headers: audioResponse.headers,
-              }))
-            } else {
-              await cache.put(variant.audioUrl, audioResponse)
-            }
-          }
-
-          await cacheOfflineRecitationMetadata({
-            chapterId: chapter.id,
-            reciter: targetReciter.id,
-            audioUrl: variant.audioUrl,
-            signal: controller.signal,
+          await cacheChapterDownload(descriptor, controller.signal, (completed, total) => {
+            const fileProgress = completed / total
+            setBulkDownloadProgress(Math.round(((index + fileProgress) / selectedChapters.length) * 100))
           })
+          if (existingEntry) {
+            const retainedUrls = new Set(descriptor.files.map((file) => file.audioUrl))
+            await Promise.all(getOfflineSurahFiles(existingEntry).map((file) => (
+              retainedUrls.has(file.audioUrl) ? false : cache.delete(file.audioUrl)
+            )))
+          }
 
           const entry: OfflineSurah = {
             key: `${targetReciter.id}-${chapter.id}`,
             chapterId: chapter.id,
-            chapterName: descriptor.chapterName ?? chapter.name,
+            chapterName: descriptor.chapterName,
             reciter: targetReciter.id,
             reciterName: targetReciter.name,
-            audioUrl: variant.audioUrl,
-            size,
-            qualityLabel: variant.label,
+            audioUrl: descriptor.files[0].audioUrl,
+            files: descriptor.files,
+            fileMode: descriptor.fileMode,
+            size: descriptor.totalSize,
+            qualityLabel: descriptor.fileMode === "chapters"
+              ? "ملف السورة"
+              : descriptor.fileMode === "pages"
+                ? `${descriptor.files.length} ملفات صفحات`
+                : `${descriptor.files.length} ملفات آيات`,
           }
           nextEntries = [entry, ...nextEntries.filter((item) => item.key !== entry.key)]
           window.localStorage.setItem(OFFLINE_SURAH_STORAGE_KEY, JSON.stringify(nextEntries))
@@ -901,10 +846,11 @@ export function AppSettings({
 
   const deleteEntry = async (entry: OfflineSurah) => {
     const cache = await window.caches.open(OFFLINE_AUDIO_CACHE)
-    const referencedByRange = rangePackages.some((rangePackage) =>
-      rangePackage.files.some((file) => file.audioUrl === entry.audioUrl),
-    )
-    if (!referencedByRange) await cache.delete(entry.audioUrl)
+    const referencedUrls = new Set(rangePackages.flatMap((rangePackage) =>
+      rangePackage.files.map((file) => file.audioUrl)))
+    await Promise.all(getOfflineSurahFiles(entry).map((file) => (
+      referencedUrls.has(file.audioUrl) ? false : cache.delete(file.audioUrl)
+    )))
     persistEntries(entries.filter((item) => item.key !== entry.key))
     await refreshStorage()
     toast.success(`تم حذف سورة ${entry.chapterName}`)
@@ -913,7 +859,7 @@ export function AppSettings({
   const deleteRangePackage = async (target: OfflineRangePackage) => {
     const remainingPackages = rangePackages.filter((item) => item.key !== target.key)
     const retainedUrls = new Set([
-      ...entries.map((entry) => entry.audioUrl),
+      ...entries.flatMap((entry) => getOfflineSurahFiles(entry).map((file) => file.audioUrl)),
       ...remainingPackages.flatMap((rangePackage) => rangePackage.files.map((file) => file.audioUrl)),
     ])
     const cache = await window.caches.open(OFFLINE_AUDIO_CACHE)
@@ -1934,7 +1880,9 @@ export function AppSettings({
                         <p className="truncate text-xs text-muted-foreground">
                           {entry.reciterName} · {formatBytes(entry.size)}
                           {entry.qualityLabel ? ` · ${entry.qualityLabel}` : ""}
-                          {offlineMissingUrlSet.has(entry.audioUrl) ? " · ناقص" : " · مكتمل"}
+                          {getOfflineSurahFiles(entry).some((file) => offlineMissingUrlSet.has(file.audioUrl))
+                            ? " · ناقص"
+                            : " · مكتمل"}
                         </p>
                       </div>
                       <Button
@@ -2097,30 +2045,26 @@ export function AppSettings({
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {pendingDownload && pendingVariant && (
-          <div className="space-y-4 border-y py-4">
-            <div className="space-y-2">
-              <Label>حجم التلاوة</Label>
-              <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {pendingDownload.variants.map((variant) => (
-                    <SelectItem key={variant.id} value={variant.id}>
-                      {variant.label} · {formatBytes(variant.fileSize)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        {pendingDownload && (
+          <div className="space-y-3 border-y py-4 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span>صيغة التنزيل</span>
+              <span className="font-medium text-foreground">
+                {pendingDownload.fileMode === "chapters"
+                  ? "ملف سورة كامل"
+                  : pendingDownload.fileMode === "pages"
+                    ? `${pendingDownload.files.length} ملفات صفحات`
+                    : `${pendingDownload.files.length} ملفات آيات`}
+              </span>
             </div>
-            {pendingDownload.variants.length === 1 && (
-              <p className="text-xs text-muted-foreground">لا يوفر المصدر حجمًا بديلًا لهذه التلاوة.</p>
-            )}
+            <div className="flex items-center justify-between gap-3 text-muted-foreground">
+              <span>الحجم</span>
+              <span>{formatBytes(pendingDownload.totalSize)}</span>
+            </div>
             {storageQuota > 0 && (
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>حجم الملف {formatBytes(pendingVariant.fileSize)}</span>
-                <span>المتاح {formatBytes(Math.max(storageQuota - storageUsage, 0))}</span>
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>المتاح</span>
+                <span>{formatBytes(Math.max(storageQuota - storageUsage, 0))}</span>
               </div>
             )}
           </div>
